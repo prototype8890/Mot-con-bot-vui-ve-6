@@ -1,0 +1,19 @@
+{
+  "name": "chatgpt-plus-fix-v2-simple",
+  "version": "2.0.1",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "watch": "node --watch src/index.js",
+    "simple": "node -r dotenv/config src/simple/main.js",
+    "auto": "node -r dotenv/config src/simple/auto.js",
+    "auto:mempool": "node -r dotenv/config src/simple/auto_mempool.js"
+  },
+  "dependencies": {
+    "ethers": "^6.13.2",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.8",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
