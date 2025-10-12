@@ -1,605 +1,178 @@
-# 🚀 ETH Mempool Sniper Bot
+# 🍌 ETH Mempool Scanner → Banana Gun Auto Buyer
 
-Bot tự động snipe tokens mới trên Ethereum Mainnet với đầy đủ tính năng bảo vệ và thông báo chi tiết.
+Scanner này quét mempool Ethereum, áp dụng bộ lọc an toàn và gửi tín hiệu ngay khi Add Liquidity. Bạn có thể:
 
-## ✨ Tính Năng Chính
+- Nhận thông báo để tự tay vào lệnh (giống phiên bản trước), **hoặc**
+- Cung cấp API của Banana Gun để bot tự động gửi lệnh mua với số lượng ETH định sẵn trong `.env`.
 
-### ✅ 100% Đáp Ứng Yêu Cầu
+## ✨ Tính năng chính
 
-| Tính Năng | Mô Tả | Trạng Thái |
+| Tính năng | Mô tả | Trạng thái |
 |-----------|-------|------------|
-| 🔍 **Auto Scan** | Quét mempool real-time, phát hiện AddLP ngay lập tức | ✅ |
-| 🛡️ **Smart Filter** | Lọc LP 0.5-1 ETH, Tax=0, No malicious functions | ✅ |
-| ⚡ **Fast Snipe** | Mua ngay khi phát hiện, abort nếu giá >3x | ✅ |
-| 📊 **Auto TP/SL** | Lời 20% bán ngay, timeout 10p, rug defense | ✅ |
-| 📱 **Rich Notifications** | Thông báo đầy đủ mọi thông tin qua Telegram | ✅ |
+| 🔍 **Realtime AddLP Scan** | Lắng nghe mempool qua WebSocket, phát hiện cặp mới ngay khi có Add Liquidity | ✅ |
+| 🛡️ **Smart Filters** | Kiểm tra LP nằm trong khoảng cấu hình, tax ≤ ngưỡng cho phép và không có hàm độc hại | ✅ |
+| 📈 **Price Guard** | So sánh giá base/current, bỏ qua nếu bị frontrun > `PRICE_MULTIPLE_ABORT` lần | ✅ |
+| 📱 **Rich Telegram Alerts** | Gửi Candidate, Skip lý do chi tiết và Signal đã pass filter | ✅ |
+| 🍌 **Banana Gun Ready** | Link sẵn tới Banana Gun + Dexscreener/Etherscan để bạn thao tác trong vài giây | ✅ |
+| 🤖 **Banana Gun Auto Buy** | Tự động gửi lệnh snipe Banana Gun với số tiền cố định khi token vượt qua mọi filter | ✅ |
 
-### 🎯 8 Bước Kiểm Tra An Toàn
+## 🧰 Cần chuẩn bị
 
-1. ✅ **Base Price Check** - Snapshot giá khi phát hiện
-2. ✅ **Tax Detection** - Quét tax từ bytecode
-3. ✅ **Malicious Functions** - Phát hiện hàm nguy hiểm (setTax, blacklist...)
-4. ✅ **Honeypot Test** (Optional) - Test trade trước khi mua thật
-5. ✅ **Price Guard** - Hủy nếu giá tăng >3x (prevent frontrun)
-6. ✅ **CallStatic Buy** - Simulation trước khi thực hiện
-7. ✅ **Rug Defense** - Phát hiện rút LP và bán khẩn cấp
-8. ✅ **Position Manager** - Tự động TP 20% hoặc timeout 10 phút
-
-## 📦 Cài Đặt
-
-### Yêu Cầu
-
-- Node.js v16+
+- Node.js v16 trở lên
 - NPM hoặc Yarn
-- Ethereum wallet với ETH
-- Telegram bot token
-- RPC endpoint với WebSocket (Alchemy/Infura/QuickNode)
+- RPC Endpoint (ưu tiên có WebSocket)
+- (Tùy chọn) Telegram Bot Token & Chat ID để nhận thông báo
+- (Tùy chọn) Banana Gun API URL + API Key + Wallet ID nếu muốn auto-buy
 
-### Bước 1: Clone & Install
+## 🚀 Cài đặt nhanh
 
 ```bash
 # Clone project
 git clone <your-repo>
 cd <project-folder>
 
-# Install dependencies
+# Cài dependency
 npm install
-
-# Hoặc nếu chưa có package.json
-npm init -y
-npm install ethers@^6.13.2 dotenv@^16.4.5 zod@^3.23.8 node-telegram-bot-api@^0.66.0
 ```
 
-### Bước 2: Cấu Hình .env
+## ⚙️ Cấu hình `.env`
 
 ```bash
-# Copy .env example
 cp .env.example .env
-
-# Edit với editor yêu thích
 nano .env
 ```
 
-**Điền các giá trị bắt buộc:**
+Các biến chính:
 
-```bash
-# RPC - WebSocket phải đứng đầu
+```
 RPC_URLS=wss://eth-mainnet.g.alchemy.com/v2/YOUR_KEY,https://eth.llamarpc.com
+MIN_LP_ETH=0.5
+MAX_LP_ETH=1.0
+STRICT_TAX_BPS_MAX=0
+STRICT_TAX_MODE=reject_unknown
+BLOCKLIST_SELECTORS=setTax,blacklist
+PRICE_GUARD=1
+PRICE_MULTIPLE_ABORT=3
 
-# Wallet
-PRIVATE_KEY=0xYourPrivateKey
-WALLET_ADDRESS=0xYourAddress
-
-# Telegram
+# Telegram (tùy chọn)
 TELEGRAM_TOKEN=1234567890:ABCdef...
 TELEGRAM_CHAT_ID=123456789
 
-# Trading (có thể dùng default)
-BUY_ETH=0.01
-MIN_LP_ETH=0.5
-MAX_LP_ETH=1.0
-TP_PCT=20
-TP_TIMEOUT_SEC=600
+# Banana Gun auto-buy (tùy chọn, cần đủ 4 biến đầu)
+BANANA_GUN_API_URL=https://api.bananagun.io/v1/orders
+BANANA_GUN_API_KEY=your_api_key
+BANANA_GUN_WALLET_ID=wallet_id_tu_Banana_Gun
+BANANA_GUN_BUY_AMOUNT_ETH=0.2
+BANANA_GUN_SLIPPAGE_BPS=500
+BANANA_GUN_PRIORITY_FEE_GWEI=3
+BANANA_GUN_GAS_MULTIPLIER=1.2
+BANANA_GUN_AUTO_APPROVE=1
 ```
 
-### Bước 3: Test Setup
+👉 Không cần private key hoặc số dư ETH trong dự án này – mọi giao dịch được Banana Gun xử lý qua API của bạn.
+
+## ✅ Kiểm tra cấu hình
 
 ```bash
-# Chạy test script để kiểm tra mọi thứ
 node test_setup.js
 ```
 
-Kết quả mong đợi:
-```
-✅ Environment Variables: PASS
-✅ RPC Connection: PASS
-✅ Wallet Setup: PASS
-✅ Telegram Bot: PASS
-✅ Contract Addresses: PASS
-✅ Trading Settings: PASS
+Script sẽ kiểm tra `.env`, kết nối RPC, contract mặc định, Telegram và trạng thái cấu hình Banana Gun. Nếu tất cả PASS, bạn sẵn sàng chạy.
 
-🎉 SETUP HOÀN THÀNH - SẴN SÀNG CHẠY BOT!
-```
-
-### Bước 4: Chạy Bot
+## ▶️ Chạy scanner
 
 ```bash
-# Chạy mempool sniper
 npm run auto:mempool
-
-# Hoặc với PM2 (recommended)
-pm2 start "npm run auto:mempool" --name sniper-bot
-pm2 logs sniper-bot
 ```
 
-## 📊 Thông Báo Telegram
+- Nếu dùng PM2:
 
-Bot sẽ gửi thông báo chi tiết cho mọi sự kiện:
-
-### 🔍 Phát Hiện Cặp Mới
+```bash
+pm2 start "npm run auto:mempool" --name mempool-scanner
+pm2 logs mempool-scanner
 ```
-🔍 [10:30:45] PHÁT HIỆN CẶP MỚI
+
+## 🍌 Tùy chọn: Auto-buy với Banana Gun
+
+Khi 4 biến `BANANA_GUN_API_URL`, `BANANA_GUN_API_KEY`, `BANANA_GUN_WALLET_ID`, `BANANA_GUN_BUY_AMOUNT_ETH` được thiết lập, bot sẽ tự gửi POST request tới API Banana Gun ngay sau khi token vượt qua mọi filter.
+
+Luồng hoạt động:
+
+1. `🍌 SIGNAL READY` xuất hiện (có kèm thông tin auto-buy: amount, slippage, priority fee…).
+2. Bot gửi payload tới Banana Gun (chuẩn JSON, xem `BananaGunClient`), bạn nhận thêm thông báo `🤖 Banana Gun ORDER SENT` hoặc `⚠️ ORDER FAILED` trên Telegram.
+3. Nếu muốn can thiệp thủ công, hãy mở link Banana Gun trong thông báo và kiểm tra lệnh trực tiếp.
+
+> ⚠️ Lưu ý: API Banana Gun khác nhau theo tài khoản. Hãy tham khảo tài liệu/discord Banana Gun để lấy endpoint chính xác và cấu hình headers bổ sung nếu cần (`BANANA_GUN_EXTRA_HEADERS`).
+
+## 📨 Mẫu thông báo
+
+### 🔍 Candidate vừa AddLP
+```
+🔍 CANDIDATE DETECTED
 ━━━━━━━━━━━━━━━━
 📍 Pair: 0x1234...5678
 🪙 Token: 0xabcd...ef01
-💧 Liquidity: 0.7500 ETH
-⏰ Thời gian: 10:30:45
+💧 LP: 0.7800 ETH
+📦 Block: #19283746
+🔗 Dexscreener / Etherscan
 ```
 
-### ⏭️ Bỏ Qua (Với Lý Do)
+### ⏭️ Skip (Lý do cụ thể)
 ```
-⏭️ [10:30:46] BỎ QUA
+⏭️ SKIPPED
 ━━━━━━━━━━━━━━━━
 🪙 Token: 0xabcd...ef01
-❌ Lý do: Tax không hợp lệ: 500 BPS
-📝 Chi tiết: tax_500_bps_gt_0
+💧 LP: 0.2000 ETH
+❌ Lý do: tax_500_bps_gt_0
+📝 Chi tiết: Tax 500 BPS exceeds limit 0 BPS
 ```
 
-### ✅ Mua Thành Công
+### 🍌 Signal + Auto-buy
 ```
-✅ [10:31:20] MUA THÀNH CÔNG
+🍌 SIGNAL READY
 ━━━━━━━━━━━━━━━━
 🪙 Token: 0xabcd...ef01
-📦 Số lượng: 1000000.00
-💰 Chi phí: 0.01 ETH
-📈 Giá mua: 100000 tokens/ETH
-🔗 TX: https://etherscan.io/tx/0x...
-⏰ Thời gian: 10:31:20
+💧 LP: 0.7800 ETH
+💰 Base Price: 105000.0000 tokens/ETH
+💸 Tax: 0 BPS (0.00%)
+🛡️ Price Guard: Change: 8.20%
+🤖 Auto Banana Gun: 0.20 ETH (slip 500 bps, prio 3 gwei, gas x1.2)
+🔗 Banana Gun / Dexscreener / Etherscan
 ```
 
-### 💰 Bán Thành Công
+### 🤖 Banana Gun order thành công
 ```
-💰 [10:33:30] BÁN THÀNH CÔNG
+🤖 Banana Gun ORDER SENT
 ━━━━━━━━━━━━━━━━
 🪙 Token: 0xabcd...ef01
-📦 Số lượng: 1000000.00
-💵 Thu về: 0.012 ETH
-💹 P&L: +20.00% (+0.002 ETH)
-⏱️ Thời gian hold: 130s
-🔗 TX: https://etherscan.io/tx/0x...
+💰 Amount: 0.20 ETH
+📦 Block: #19283746
+📄 Status: submitted
+📝 Banana Gun response: {...}
 ```
 
-### 🚨 Cảnh Báo Rug Pull
+### ⚠️ Banana Gun order thất bại
 ```
-🚨 [10:32:10] CẢNH BÁO RUG PULL
+⚠️ Banana Gun ORDER FAILED
 ━━━━━━━━━━━━━━━━
 🪙 Token: 0xabcd...ef01
-⚠️ Loại: router-remove
-🔗 Rug TX: https://etherscan.io/tx/0x...
-⚡ ĐANG BÁN KHẨN CẤP...
+💰 Amount: 0.20 ETH
+❗ Error: Token disabled by Banana Gun risk filter
+📝 Response: {...}
 ```
 
-### 📊 Thống Kê
-```
-📊 [11:00:00] THỐNG KÊ
-━━━━━━━━━━━━━━━━
-📈 Tổng trades: 10
-✅ Thành công: 7
-❌ Thất bại: 3
-💰 Tổng lời: 0.015 ETH
-📉 Tổng lỗ: 0.005 ETH
-💵 Net P&L: +0.010 ETH
-🎯 Win rate: 70%
-```
+## ❓ FAQ
 
-## ⚙️ Cấu Hình Chi Tiết
+### Scanner có tự mua token không?
+- **Có nếu** bạn cấu hình Banana Gun API trong `.env` (bot sẽ gửi lệnh auto ngay khi token đạt tiêu chí).
+- **Không** nếu bạn bỏ trống cấu hình Banana Gun – thông báo chỉ dùng để bạn vào lệnh thủ công.
 
-### Trading Settings
+### Có thể thêm filter riêng không?
+Có thể chỉnh sửa `BLOCKLIST_SELECTORS`, `STRICT_TAX_BPS_MAX` hoặc tùy biến code trong `src/simple/filters.js` để bổ sung logic riêng.
 
-```bash
-# Số ETH mỗi lần mua
-BUY_ETH=0.01
-
-# Range liquidity để snipe
-MIN_LP_ETH=0.5
-MAX_LP_ETH=1.0
-
-# Tax tối đa chấp nhận (0 = zero tax only)
-STRICT_TAX_BPS_MAX=0
-STRICT_TAX_MODE=reject_unknown
-
-# Các hàm bị chặn (ngăn scam)
-BLOCKLIST_SELECTORS=enableTrading,setTax,setTaxes,setFee,setFees,updateFee,updateFees,excludeFromFee,setBlacklist,setBlackList,setMaxTxAmount,setMaxTx
-
-# Test honeypot trước (0 = skip, 0.001 = test với 0.001 ETH)
-HONEYPOT_TEST_WEI=0
-```
-
-### Profit/Loss Settings
-
-```bash
-# Take profit target (%)
-TP_PCT=20
-
-# Timeout để cut loss (giây)
-TP_TIMEOUT_SEC=600
-
-# Abort nếu giá tăng quá nhanh
-PRICE_GUARD=1
-PRICE_MULTIPLE_ABORT=3
-```
-
-### Rug Defense
-
-```bash
-# Bật rug pull defense
-RUG_DEFENSE=1
-
-# Ngưỡng rút LP (basis points)
-# 2000 BP = 20% LP removal
-RUG_THRESHOLD_BP=2000
-
-# Gas settings khi panic sell
-PANIC_TIP_ADD_GWEI=2
-MAX_FEE_GWEI_CAP=300
-MAX_PRIORITY_FEE_GWEI_CAP=200
-```
-
-## 🎯 Strategies
-
-### 🛡️ Conservative (An Toàn)
-
-Phù hợp cho người mới, ưu tiên an toàn hơn lợi nhuận:
-
-```bash
-BUY_ETH=0.005              # Giảm risk
-MIN_LP_ETH=0.8             # Chỉ snipe LP lớn
-MAX_LP_ETH=1.0
-STRICT_TAX_BPS_MAX=0       # Zero tax only
-HONEYPOT_TEST_WEI=0.001    # Test trước
-TP_PCT=15                  # TP sớm
-TP_TIMEOUT_SEC=300         # Cut loss nhanh (5p)
-PRICE_MULTIPLE_ABORT=2     # Strict price guard
-```
-
-**Ưu điểm:** 
-- ✅ Ít rủi ro
-- ✅ Win rate cao
-- ✅ Tránh scam tốt
-
-**Nhược điểm:**
-- ⚠️ Ít cơ hội
-- ⚠️ Lợi nhuận thấp
+### Cần bật Telegram không?
+Không bắt buộc. Nếu không cấu hình Telegram, scanner sẽ log thông tin trong terminal.
 
 ---
 
-### ⚡ Aggressive (Mạo Hiểm)
-
-Phù hợp cho trader có kinh nghiệm, chấp nhận rủi ro cao:
-
-```bash
-BUY_ETH=0.02               # Tăng position size
-MIN_LP_ETH=0.3             # Snipe LP nhỏ
-MAX_LP_ETH=2.0             # Range rộng
-STRICT_TAX_BPS_MAX=100     # Chấp nhận tax nhỏ
-HONEYPOT_TEST_WEI=0        # Không test (nhanh hơn)
-TP_PCT=50                  # Chờ lời lớn
-TP_TIMEOUT_SEC=1200        # Hold lâu (20p)
-PRICE_MULTIPLE_ABORT=5     # Chấp nhận giá cao
-```
-
-**Ưu điểm:**
-- ✅ Nhiều cơ hội
-- ✅ Lợi nhuận cao nếu hit
-
-**Nhược điểm:**
-- ⚠️ Rủi ro cao
-- ⚠️ Dễ bị rug/scam
-
----
-
-### ⚖️ Balanced (Cân Bằng)
-
-Khuyến nghị cho hầu hết traders:
-
-```bash
-BUY_ETH=0.01
-MIN_LP_ETH=0.5
-MAX_LP_ETH=1.0
-STRICT_TAX_BPS_MAX=0
-HONEYPOT_TEST_WEI=0
-TP_PCT=20
-TP_TIMEOUT_SEC=600
-PRICE_MULTIPLE_ABORT=3
-```
-
-**Ưu điểm:**
-- ✅ Cân bằng risk/reward
-- ✅ Đủ cơ hội
-- ✅ An toàn hợp lý
-
----
-
-## 🐛 Troubleshooting
-
-### Bot không phát hiện pair nào
-
-**Nguyên nhân:**
-- LP range quá hẹp
-- RPC chậm
-- Không có pair mới nào match criteria
-
-**Giải pháp:**
-```bash
-# Mở rộng range
-MIN_LP_ETH=0.3
-MAX_LP_ETH=2.0
-
-# Kiểm tra RPC có WSS
-# Đổi sang RPC nhanh hơn (Alchemy Pro)
-```
-
-### Bị bỏ lỡ nhiều pair (too slow)
-
-**Nguyên nhân:**
-- RPC chậm
-- Honeypot test làm chậm
-- Nhiều filters
-
-**Giải pháp:**
-```bash
-# Tắt honeypot test
-HONEYPOT_TEST_WEI=0
-
-# Dùng RPC nhanh nhất
-# Giảm bớt filters nếu cần
-```
-
-### Thường xuyên lỗ
-
-**Nguyên nhân:**
-- TP target quá cao
-- Timeout quá dài
-- Bị frontrun
-
-**Giải pháp:**
-```bash
-# Giảm TP, giảm timeout
-TP_PCT=15
-TP_TIMEOUT_SEC=300
-
-# Tăng price guard
-PRICE_MULTIPLE_ABORT=2
-
-# Bật honeypot test
-HONEYPOT_TEST_WEI=0.001
-```
-
-### Không nhận Telegram notification
-
-**Kiểm tra:**
-1. Token đúng từ @BotFather
-2. Chat ID đúng từ @userinfobot  
-3. Đã /start với bot
-4. Internet stable
-
-**Test:**
-```bash
-node test_setup.js
-```
-
-### RPC errors liên tục
-
-**Nguyên nhân:**
-- Rate limit
-- RPC down
-- Network issues
-
-**Giải pháp:**
-- Dùng nhiều RPC fallback
-- Upgrade plan (Alchemy/Infura)
-- Kiểm tra internet
-
----
-
-## 📈 Monitoring & Analytics
-
-### Logs
-
-```bash
-# Chạy với logs
-npm run auto:mempool 2>&1 | tee logs/bot_$(date +%Y%m%d).log
-
-# Theo dõi real-time
-tail -f logs/bot_*.log
-
-# Search errors
-grep "ERROR" logs/bot_*.log
-```
-
-### PM2 Dashboard
-
-```bash
-# Install PM2
-npm install -g pm2
-
-# Start bot
-pm2 start "npm run auto:mempool" --name sniper
-
-# Monitor
-pm2 monit
-
-# Logs
-pm2 logs sniper
-
-# Restart nếu crash
-pm2 restart sniper
-```
-
-### Performance Metrics
-
-Bot tự động track:
-- Total trades
-- Win rate
-- Net P&L
-- Average hold time
-- Skip reasons
-
-Xem trong Telegram mỗi 10 trades hoặc mỗi 5 phút.
-
----
-
-## 🔒 Security Best Practices
-
-### ⚠️ Quan Trọng
-
-1. **Private Key:**
-   - ❌ KHÔNG bao giờ share
-   - ❌ KHÔNG commit lên GitHub
-   - ✅ Backup ở nơi an toàn offline
-   - ✅ Dùng wallet riêng cho bot
-
-2. **Funds:**
-   - ✅ Chỉ nạp đủ để trade (0.1-0.5 ETH)
-   - ✅ Withdraw profits thường xuyên
-   - ❌ Không để số lớn trong bot wallet
-
-3. **.env File:**
-   - ✅ Add vào .gitignore
-   - ✅ Chmod 600 (Linux/Mac)
-   - ❌ Không share screen khi mở
-
-4. **RPC Keys:**
-   - ✅ Dùng keys riêng cho bot
-   - ✅ Set rate limits hợp lý
-   - ✅ Rotate keys định kỳ
-
----
-
-## 🚀 Production Deployment
-
-### VPS Setup (Ubuntu 20.04+)
-
-```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
-
-# Install Node.js 18
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt install -y nodejs
-
-# Install PM2
-sudo npm install -g pm2
-
-# Clone & setup
-git clone <repo>
-cd <project>
-npm install
-cp .env.example .env
-nano .env  # Fill your config
-
-# Test
-node test_setup.js
-
-# Start with PM2
-pm2 start "npm run auto:mempool" --name sniper
-pm2 save
-pm2 startup  # Auto-start on reboot
-
-# Monitor
-pm2 monit
-```
-
-### Docker Setup
-
-```bash
-# Build image
-docker build -t eth-sniper .
-
-# Run container
-docker run -d \
-  --name sniper-bot \
-  --env-file .env \
-  --restart unless-stopped \
-  eth-sniper
-
-# View logs
-docker logs -f sniper-bot
-```
-
----
-
-## 📊 Expected Results
-
-### Thông Số Thực Tế (Based on testing)
-
-- **Pairs detected:** 10-50/day (tùy market activity)
-- **Pairs matched criteria:** 5-20% of detected
-- **Successful buys:** 60-80% of matched
-- **Win rate:** 40-70% (tùy market & settings)
-- **Average P&L per win:** +15-30%
-- **Average loss:** -5-15%
-
-### Timeline
-
-- **0-5s:** Phát hiện AddLP trong mempool
-- **5-15s:** Run filters (tax, selectors, price...)
-- **15-30s:** Execute buy
-- **30s-10m:** Monitor position
-- **10m hoặc TP:** Auto sell
-
----
-
-## 🆘 Support & Updates
-
-### Logs Quan Trọng
-
-Nếu gặp vấn đề, lưu logs:
-```bash
-# Lưu logs đầy đủ
-npm run auto:mempool 2>&1 | tee debug.log
-
-# Share các dòng:
-# - Boot message
-# - Error messages  
-# - Candidate messages
-# - Buy/sell transactions
-```
-
-### Common Issues
-
-| Issue | Fix |
-|-------|-----|
-| "Need WSS" | Thêm wss:// RPC vào đầu |
-| "Insufficient funds" | Nạp ETH vào wallet |
-| "Transaction reverted" | Normal, bot sẽ skip |
-| No pairs detected | Mở rộng LP range |
-| High loss rate | Giảm timeout, tăng filters |
-
----
-
-## 📜 License & Disclaimer
-
-**⚠️ CẢNH BÁO:**
-
-- Bot này dành cho mục đích giáo dục và testing
-- Trading crypto có rủi ro mất vốn
-- Không bảo đảm lợi nhuận
-- Sử dụng với trách nhiệm của bạn
-- Developer không chịu trách nhiệm về tổn thất
-
-**📖 License:** MIT
-
----
-
-## 🎯 Roadmap
-
-- [ ] Multi-chain support (BSC, Arbitrum, Base)
-- [ ] Web dashboard
-- [ ] Advanced analytics
-- [ ] ML-based scam detection
-- [ ] Automated strategy optimization
-- [ ] Multi-wallet support
-
----
-
-## 🙏 Credits
-
-Built with:
-- [Ethers.js](https://docs.ethers.org/)
-- [Node.js](https://nodejs.org/)
-- [Telegram Bot API](https://core.telegram.org/bots/api)
-
----
-
-**💪 Happy Sniping! May the gains be with you! 🚀**
+Chúc bạn săn được nhiều kèo đẹp – và luôn kiểm tra lại trước khi bắn Banana Gun! 🫡

@@ -35,7 +35,7 @@ export class EnhancedNotifier {
   async notifyCandidate({ token, pair, eth, blockNumber, txHash }) {
     const dexscreener = `https://dexscreener.com/ethereum/${pair}`;
     const etherscan = `https://etherscan.io/address/${token}`;
-    
+
     const msg = `🔍 <b>CANDIDATE DETECTED</b>
 ━━━━━━━━━━━━━━━━
 📍 Pair: <code>${pair.slice(0,8)}...${pair.slice(-6)}</code>
@@ -46,6 +46,141 @@ export class EnhancedNotifier {
 🔗 <a href="${dexscreener}">Dexscreener</a>
 🔗 <a href="${etherscan}">Etherscan</a>
 ${txHash ? `🔗 <a href="https://etherscan.io/tx/${txHash}">AddLP TX</a>` : ''}
+
+⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
+
+    await this.send(msg);
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 🍌 BANANA GUN SIGNAL READY
+  // ════════════════════════════════════════════════════════════
+  async notifySignal({
+    token,
+    pair,
+    blockNumber,
+    lpEth,
+    basePriceTokensPerEth,
+    taxBps,
+    taxDetails,
+    priceGuardInfo,
+    bananaGun: bananaGunConfig
+  }) {
+    const dexscreener = `https://dexscreener.com/ethereum/${pair}`;
+    const etherscan = `https://etherscan.io/address/${token}`;
+    const bananaGunLink = `https://app.bananagun.io/#/swap?chain=eth&token=${token}`;
+
+    const basePrice = basePriceTokensPerEth > 0n
+      ? ethers.formatUnits(basePriceTokensPerEth, 18)
+      : 'N/A';
+
+    const taxText = taxBps !== null
+      ? `${taxBps} BPS (${(taxBps / 100).toFixed(2)}%)`
+      : 'Unknown (allowed by config)';
+
+    let priceGuardText = 'Disabled';
+    if (priceGuardInfo) {
+      if (priceGuardInfo.status === 'skipped') {
+        priceGuardText = 'Skipped (price unavailable)';
+      } else if (priceGuardInfo.status === 'ok') {
+        priceGuardText = `Change: ${priceGuardInfo.priceChangePercent}%`;
+      }
+    }
+
+    const autoText = bananaGunConfig
+      ? `🤖 <b>Auto Banana Gun:</b> ${bananaGunConfig.amountEth} ETH (slip ${bananaGunConfig.slippageBps} bps, prio ${bananaGunConfig.priorityFeeGwei} gwei, gas x${bananaGunConfig.gasMultiplier})`
+      : '👉 <b>Hành động:</b> Mở Banana Gun, dán địa chỉ token và kiểm tra trước khi mua';
+
+    const msg = `🍌 <b>SIGNAL READY</b>
+━━━━━━━━━━━━━━━━
+🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>
+📍 Pair: <code>${pair.slice(0,8)}...${pair.slice(-6)}</code>
+📦 Block: <b>#${blockNumber}</b>
+💧 LP: <b>${lpEth.toFixed(4)} ETH</b>
+💰 Base Price: ${basePrice} tokens/ETH
+💸 Tax: ${taxText}
+🛡️ Price Guard: ${priceGuardText}
+
+${autoText}
+
+ 🔗 <a href="${bananaGunLink}">Open in Banana Gun</a>
+🔗 <a href="${dexscreener}">Dexscreener</a>
+🔗 <a href="${etherscan}">Etherscan</a>
+
+📝 ${taxDetails || 'Passed all configured filters'}
+⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
+
+    await this.send(msg);
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 🍌 BANANA GUN AUTO ORDER RESULT
+  // ════════════════════════════════════════════════════════════
+  async notifyBananaGunOrder({ token, pair, amountEth, blockNumber, status, orderId, txHash, response }) {
+    const dexscreener = `https://dexscreener.com/ethereum/${pair}`;
+    const etherscan = `https://etherscan.io/address/${token}`;
+    const txLink = txHash ? `🔗 <a href="https://etherscan.io/tx/${txHash}">Submitted TX</a>` : '';
+
+    let responseText = 'No response payload';
+    if (response) {
+      if (typeof response === 'string') {
+        responseText = response;
+      } else {
+        try {
+          responseText = JSON.stringify(response, null, 2);
+        } catch (e) {
+          responseText = `Không thể hiển thị response: ${e.message}`;
+        }
+      }
+    }
+
+    const msg = `🤖 <b>Banana Gun ORDER SENT</b>
+━━━━━━━━━━━━━━━━
+🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>
+💰 Amount: ${amountEth} ETH
+📦 Block: #${blockNumber}
+📄 Status: <b>${status}</b>
+${orderId ? `🆔 Order ID: <code>${orderId}</code>` : ''}
+
+🔗 <a href="${dexscreener}">Dexscreener</a>
+🔗 <a href="${etherscan}">Token</a>
+${txLink}
+
+📝 <b>Banana Gun response:</b>
+<pre>${responseText}</pre>
+
+⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
+
+    await this.send(msg);
+  }
+
+  async notifyBananaGunOrderError({ token, pair, amountEth, blockNumber, error, response }) {
+    const dexscreener = `https://dexscreener.com/ethereum/${pair}`;
+
+    let responseText = 'Không có phản hồi (có thể lỗi kết nối)';
+    if (response) {
+      if (typeof response === 'string') {
+        responseText = response;
+      } else {
+        try {
+          responseText = JSON.stringify(response, null, 2);
+        } catch (e) {
+          responseText = `Không thể hiển thị response: ${e.message}`;
+        }
+      }
+    }
+
+    const msg = `⚠️ <b>Banana Gun ORDER FAILED</b>
+━━━━━━━━━━━━━━━━
+🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>
+💰 Amount: ${amountEth} ETH
+📦 Block: #${blockNumber}
+
+❗ <b>Error:</b> ${error}
+📝 <b>Response:</b>
+<pre>${responseText}</pre>
+
+🔗 <a href="${dexscreener}">Dexscreener</a>
 
 ⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
 
@@ -343,31 +478,23 @@ ${emoji} <b>${netProfitETH >= 0 ? 'PROFITABLE' : 'IN LOSS'}</b>
   // ════════════════════════════════════════════════════════════
   // 🚀 BOOT MESSAGE
   // ════════════════════════════════════════════════════════════
-  async notifyBoot({ 
-    network, 
-    chainId, 
-    wallet, 
-    balance, 
-    hasWSS, 
-    settings 
+  async notifyBoot({
+    network,
+    chainId,
+    hasWSS,
+    settings
   }) {
-    const msg = `🚀 <b>BOT STARTED</b>
+    const msg = `🚀 <b>SCANNER ONLINE</b>
 ━━━━━━━━━━━━━━━━
 🌐 Network: ${network} (${chainId})
-👛 Wallet: <code>${wallet.slice(0,8)}...${wallet.slice(-6)}</code>
-💰 Balance: <b>${balance} ETH</b>
-🔌 RPC: ${hasWSS ? 'WebSocket ✅' : 'HTTP (Fallback) ⚠️'}
+🔌 RPC: ${hasWSS ? 'WebSocket ✅ realtime' : 'HTTP fallback ⚠️'}
 
-⚙️ <b>Settings:</b>
+⚙️ <b>Filters:</b>
   • LP Range: ${settings.minLP}-${settings.maxLP} ETH
-  • Buy Amount: ${settings.buyETH} ETH
-  • Tax Max: ${settings.taxMax} BPS
-  • TP: ${settings.tpPct}% | Timeout: ${settings.timeout}s
-  • Price Guard: ${settings.priceMultiple}x
-  • Rug Defense: ${settings.rugDefense ? 'ON' : 'OFF'}
+  • Tax Limit: ${settings.taxMax} BPS (mode: ${settings.taxMode})
+  • Price Guard: ${settings.priceGuard ? `${settings.priceMultiple}x` : 'Disabled'}
 
-━━━━━━━━━━━━━━━━
-✅ <b>Ready to snipe...</b>
+🍌 Bot chỉ gửi tín hiệu - dùng Banana Gun để mua thủ công.
 
 ⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
 
@@ -377,13 +504,11 @@ ${emoji} <b>${netProfitETH >= 0 ? 'PROFITABLE' : 'IN LOSS'}</b>
   // ════════════════════════════════════════════════════════════
   // 🛑 SHUTDOWN
   // ════════════════════════════════════════════════════════════
-  async notifyShutdown({ activePositions, reason }) {
-    const msg = `🛑 <b>BOT STOPPING</b>
+  async notifyShutdown({ reason }) {
+    const msg = `🛑 <b>SCANNER STOPPING</b>
 ━━━━━━━━━━━━━━━━
-⏱️ Active Positions: ${activePositions}
-${reason ? `📝 Reason: ${reason}` : ''}
-
-${activePositions > 0 ? '⚠️ Closing all positions...' : '✅ No open positions'}
+📝 Reason: ${reason || 'N/A'}
+✅ Không có giao dịch tự động cần đóng.
 
 ⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
 
