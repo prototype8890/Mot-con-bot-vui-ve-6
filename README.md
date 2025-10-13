@@ -16,16 +16,8 @@ Scanner này quét mempool Ethereum, áp dụng bộ lọc an toàn và gửi t�
 | 🍌 **Banana Gun Auto Trade** | Tự động chat lệnh Banana Gun qua Telegram, log gas & Banana fee, chênh lệch giá gốc ↔ giá mua | ✅ |
 | 💰 **Trade Lifecycle Reports** | Sau mỗi lệnh bán gửi P&L %, lời/lỗ ETH, thời gian hold, gas từng giao dịch | ✅ |
 | ⏳ **10 phút Stop-loss** | Sau `AUTO_SELL_TIMEOUT_MINUTES` nếu chưa hòa vốn → bán và báo mức lỗ | ✅ |
-| 📊 **Concurrent Trade Guard** | Giới hạn số lệnh xử lý đồng thời qua `MAX_CONCURRENT_TRADES` để tránh nghẽn lệnh | ✅ |
-| 🔁 **RPC Auto-Reconnect** | Mất kết nối WSS/HTTP sẽ tự động thử lại, khởi tạo lại watcher và rug defense | ✅ |
 | 🚨 **Rug Pull Front-run** | Phát hiện rút LP → gửi Banana Gun sell trước chủ token, thông báo rõ ràng | ✅ |
 | 📊 **Session Summary** | Khi dừng bot: tổng kết số lệnh, win rate, lời/lỗ, gas, phí Banana | ✅ |
-| 🧠 **ML Token Scoring** | Tính điểm dựa trên LP, tuổi token, lịch sử deployer & thuế để loại kèo rác | ✅ |
-| 🪤 **Honeypot Shield** | Giả lập swap, kiểm tra phân bổ LP & cảnh báo honeypot trước khi mua | ✅ |
-| 📉 **Smart Stop / Take-Profit** | Trailing stop, take-profit động và stop-loss tự động theo PnL realtime | ✅ |
-| 🧯 **Circuit Breaker** | Tạm dừng giao dịch khi chuỗi lỗ ≥ `MAX_CONSECUTIVE_LOSSES`, tự reset sau cooldown | ✅ |
-| 🌐 **Multi-DEX Scan** | Hỗ trợ cấu hình nhiều router/factory qua `DEX_CONFIG_JSON` hoặc biến DEX_* | ✅ |
-| 📈 **Dashboard & Analytics** | Lưu trade vào SQLite/JSON và mở dashboard web xem trạng thái realtime | ✅ |
 
 ## 🧰 Cần chuẩn bị
 
@@ -65,37 +57,8 @@ STRICT_TAX_MODE=reject_unknown
 BLOCKLIST_SELECTORS=setTax,blacklist
 PRICE_GUARD=1
 PRICE_MULTIPLE_ABORT=3
-PRICE_GUARD_RETRY_DELAY_MS=250
 AUTO_SELL_TIMEOUT_MINUTES=10
 RUG_PULL_THRESHOLD_BPS=500
-MAX_CONCURRENT_TRADES=3
-
-# Exit & risk controls
-TRAILING_STOP_BPS=800
-SMART_TP_TARGET_BPS=1500
-SMART_TP_TRAIL_BPS=500
-MAX_CONSECUTIVE_LOSSES=3
-CIRCUIT_BREAKER_COOLDOWN_MINUTES=30
-ML_FILTER_ENABLED=1
-ML_SCORE_THRESHOLD=62
-HONEYPOT_MIN_LP_RATIO=0.02
-RETRY_MAX_ATTEMPTS=3
-RETRY_BASE_DELAY_MS=200
-ANALYTICS_ENABLED=1
-ANALYTICS_DB_PATH=data/analytics.db
-WEB_DASHBOARD_ENABLED=0
-WEB_DASHBOARD_PORT=8787
-GAS_OPTIMIZER_CACHE_MS=5000
-
-# Multi-DEX (tùy chọn)
-DEX_NAME=UniswapV2
-DEX_CHAIN=eth
-DEX_SLUG=ethereum
-DEX_EXPLORER=etherscan.io
-ROUTER_V2=0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
-ROUTER_V2_LIST=
-FACTORY_V2=0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f
-DEX_CONFIG_JSON=
 
 # Telegram (tùy chọn, để nhận thông báo)
 TELEGRAM_TOKEN=1234567890:ABCdef...
@@ -117,21 +80,6 @@ BANANA_GUN_WALLET_ADDRESS=0xYourBananaWallet
 ```
 
 👉 Không cần private key hoặc số dư ETH trong dự án này – bot chỉ gửi tin nhắn Telegram tới Banana Gun để thực hiện lệnh hộ bạn.
-
-`MAX_CONCURRENT_TRADES` giúp tránh việc gửi quá nhiều lệnh Banana Gun cùng lúc khi thị trường có nhiều token mới. Khi đạt giới hạn, bot
-chỉ gửi thông báo “skip” và chờ các lệnh hiện có hoàn tất.
-
-`PRICE_GUARD_RETRY_DELAY_MS` đặt khoảng nghỉ giữa các lần kiểm tra giá realtime (mặc định 250ms) để bot phản ứng nhanh với biến động nhưng vẫn hạn chế spam RPC. `PRICE_MULTIPLE_ABORT` chấp nhận số thập phân (ví dụ 2.5) nhưng luôn phải > 1.0x để đảm bảo chỉ các kèo bị frontrun quá mạnh mới bị bỏ qua.
-
-`ML_FILTER_ENABLED` bật mô-đun chấm điểm token (0-100). `ML_SCORE_THRESHOLD` càng cao thì bộ lọc càng khắt khe.
-
-`TRAILING_STOP_BPS`, `SMART_TP_TARGET_BPS`, `SMART_TP_TRAIL_BPS` điều khiển trailing stop và take-profit tự động (đơn vị BPS = % * 100).
-
-`MAX_CONSECUTIVE_LOSSES` kết hợp với `CIRCUIT_BREAKER_COOLDOWN_MINUTES` để khóa giao dịch mới sau chuỗi thua lỗ.
-
-`DEX_CONFIG_JSON` chấp nhận mảng JSON giúp quét nhiều router/factory cùng lúc (ví dụ Uniswap + Sushi). Nếu để trống sẽ dùng các biến `DEX_*` mặc định.
-
-`WEB_DASHBOARD_ENABLED=1` mở dashboard tại `http://localhost:WEB_DASHBOARD_PORT` và cung cấp API `/stats` phục vụ giám sát.
 
 ## ✅ Kiểm tra cấu hình
 
