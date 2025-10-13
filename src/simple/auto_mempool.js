@@ -577,7 +577,240 @@ function toFloat(value) {
     trade.watchers.push(watcher);
   }
 
-  watchMempoolAddLP({
+  async function finalizeTrade(key, trade, { sellSummary = null, outcome = 'sold' } = {}) {
+    cleanupTradeResources(trade);
+
+    activeTrades.delete(key);
+
+    if (outcome === 'aborted') {
+      stats.aborted += 1;
+      return;
+    }
+
+    if (!sellSummary) return;
+
+    stats.totalTrades += 1;
+    stats.totalGasEth += sellSummary.totalGasEth;
+
+    if (sellSummary.pnlEth >= 0) {
+      stats.profitable += 1;
+      stats.totalProfitEth += sellSummary.pnlEth;
+    } else {
+      stats.losing += 1;
+      stats.totalLossEth += Math.abs(sellSummary.pnlEth);
+    }
+
+    for (const fee of trade.bananaFees || []) {
+      if (fee) stats.bananaFees.push(fee);
+    }
+  }
+
+  async function handleSell({ trade, key, reason, notifyTimeout }) {
+    if (trade.status !== 'bought') return;
+    if (!bananaGunClient.enabled) {
+      console.warn('Banana Gun client disabled - cannot sell');
+      return;
+    }
+
+    trade.status = 'selling';
+
+    if (notifyTimeout) {
+      const priceNow = await currentTokensPerEth(provider, trade.pair, c.weth);
+      if (priceNow > 0n && trade.buy) {
+        const tokensValueWei = priceNow === 0n ? 0n : (trade.buy.tokensRaw * 10n ** 18n) / priceNow;
+        const pnlEth = Number(ethers.formatEther(tokensValueWei - trade.buy.ethSpentWei));
+        await notifier.notifyTimeoutStopLoss({
+          token: trade.token,
+          pair: trade.pair,
+          metadata: trade.metadata,
+          pnlPct: trade.buy.ethSpentEth === 0 ? 0 : (pnlEth / trade.buy.ethSpentEth) * 100
+        });
+      } else {
+        await notifier.notifyTimeoutStopLoss({
+          token: trade.token,
+          pair: trade.pair,
+          metadata: trade.metadata,
+          pnlPct: -100
+        });
+      }
+    }
+
+    const currentBlock = await provider.getBlockNumber();
+
+    let order;
+    try {
+      order = await bananaGunClient.submitSell({
+        token: trade.token,
+        pair: trade.pair,
+        reason,
+        metadata: { triggerBlock: currentBlock, triggerReason: reason }
+      });
+    } catch (error) {
+      console.error('[BananaGun] Sell submit failed:', error);
+      await notifier.notifyBananaGunOrderError({
+        token: trade.token,
+        pair: trade.pair,
+        amountEth: 'SELL 100%',
+        blockNumber: currentBlock,
+        error: error.message,
+        response: null
+      });
+      trade.status = 'bought';
+      return;
+    }
+
+    if (!order.success) {
+      await notifier.notifyBananaGunOrderError({
+        token: trade.token,
+        pair: trade.pair,
+        amountEth: 'SELL 100%',
+        blockNumber: currentBlock,
+        error: order.error,
+        response: order.response
+      });
+      trade.status = 'bought';
+      return;
+    }
+
+    if (order.bananaFee) {
+      trade.bananaFees = trade.bananaFees || [];
+      trade.bananaFees.push(order.bananaFee);
+    }
+
+    await notifier.notifyBananaGunOrder({
+      token: trade.token,
+      pair: trade.pair,
+      amountEth: 'SELL 100%',
+      blockNumber: currentBlock,
+      status: order.status,
+      orderId: order.orderId,
+      txHash: order.txHash,
+      response: order.response,
+      bananaFee: order.bananaFee,
+      metadata: order.metadata
+    });
+
+    const receipt = order.txHash ? await waitForReceipt(provider, order.txHash) : null;
+    if (!receipt) {
+      console.warn('[BananaGun] Sell receipt missing');
+      trade.status = 'sold';
+      await finalizeTrade(key, trade, { outcome: 'aborted' });
+      return;
+    }
+
+    const pairInfo = trade.pairInfo || await getPairInfo(provider, trade.pair);
+    const swap = extractSwapAmounts({ receipt, pair: trade.pair, pairInfo, weth: c.weth });
+
+    const sellBlock = receipt.blockNumber;
+    const sellBlockData = await provider.getBlock(sellBlock);
+    const timestamp = sellBlockData?.timestamp || Math.floor(Date.now() / 1000);
+
+    const gasUsed = Number(receipt.gasUsed);
+    const gasPrice = Number(ethers.formatUnits(receipt.effectiveGasPrice, 'gwei'));
+    const gasCost = calculateGasCost(receipt.gasUsed, receipt.effectiveGasPrice);
+
+    let ethReceivedWei = 0n;
+    let tokensSold = 0n;
+
+    if (swap) {
+      ethReceivedWei = swap.ethOut ?? 0n;
+      tokensSold = swap.tokenIn ?? 0n;
+    }
+
+    const ethReceivedEth = Number(ethers.formatEther(ethReceivedWei));
+    const buyTotalCostWei = trade.buy.ethSpentWei + trade.buy.gasCostWei;
+    const sellGasWei = receipt.gasUsed * receipt.effectiveGasPrice;
+    const totalCostWei = buyTotalCostWei + sellGasWei;
+    const pnlWei = ethReceivedWei - totalCostWei;
+    const pnlEth = Number(ethers.formatEther(pnlWei));
+    const pnlPct = trade.buy.ethSpentEth === 0
+      ? 0
+      : (pnlEth / trade.buy.ethSpentEth) * 100;
+
+    const sellSummary = {
+      blockNumber: sellBlock,
+      timestamp,
+      txHash: receipt.transactionHash,
+      gasUsed,
+      gasPrice,
+      gasCost,
+      ethReceived: formatNumber(ethReceivedEth, 6),
+      ethReceivedWei,
+      tokensSold,
+      pnlEth,
+      pnlPct,
+      totalGasEth: toFloat(gasCost) + trade.buy.gasCostEth,
+      bananaFee: order.bananaFee
+    };
+
+    trade.sell = sellSummary;
+    trade.status = 'sold';
+
+    await notifier.notifyAutoSellReport({
+      token: trade.token,
+      pair: trade.pair,
+      metadata: trade.metadata,
+      reason,
+      detection: trade.detection,
+      buy: trade.buy,
+      sell: sellSummary,
+      pnlPct,
+      pnlEth,
+      bananaFee: order.bananaFee
+    });
+
+    if (reason.toLowerCase().startsWith('rug pull')) {
+      await notifier.notifyRugFrontRunResult({
+        token: trade.token,
+        pair: trade.pair,
+        sell: sellSummary
+      });
+    }
+
+    await finalizeTrade(key, trade, { sellSummary, outcome: pnlEth >= 0 ? 'profit' : 'loss' });
+  }
+
+  function scheduleTimeout(trade, key) {
+    const timeoutMinutes = Math.max(1, Math.round(c.timeoutMs / 60000));
+    const timer = setTimeout(() => {
+      handleSell({
+        trade,
+        key,
+        reason: `Timeout ${timeoutMinutes} phút`,
+        notifyTimeout: true
+      });
+    }, c.timeoutMs);
+    trade.timers = trade.timers || [];
+    trade.timers.push(timer);
+  }
+
+  function armRugWatcher(trade, key) {
+    if (!hasWSS) return;
+
+    const watcher = watchRugDefense({
+      provider,
+      pair: trade.pair,
+      routers: [c.router],
+      thresholdBp: c.rugThresholdBps,
+      onThreat: async ({ kind, hash }) => {
+        await notifier.notifyRugAlert({
+          token: trade.token,
+          pair: trade.pair,
+          kind,
+          rugTxHash: hash,
+          blockNumber: await provider.getBlockNumber(),
+          metadata: trade.metadata
+        });
+
+        await handleSell({ trade, key, reason: `Rug pull (${kind})`, notifyTimeout: false });
+      }
+    });
+
+    trade.watchers = trade.watchers || [];
+    trade.watchers.push(watcher);
+  }
+
+  const watcher = watchMempoolAddLP({
     provider,
     routerList: [c.router],
     factory: c.factory,
