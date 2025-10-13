@@ -5,11 +5,24 @@ import { IUniswapV2Router } from './abi.js';
 /**
  * 🔥 Enhanced buyExactETH với multiple improvements
  */
-export async function buyExactETH({ 
-  router, 
-  weth, 
-  token, 
-  wallet, 
+function extractErrorMessage(error) {
+  if (!error) return '';
+  if (typeof error === 'string') return error;
+
+  const nested = error.error?.message || error.info?.error?.message;
+  if (nested) return nested;
+
+  if (error.shortMessage) return error.shortMessage;
+  if (error.reason) return error.reason;
+
+  return error.message || String(error);
+}
+
+export async function buyExactETH({
+  router,
+  weth,
+  token,
+  wallet,
   amountWei,
   slippageBps = null, // Will use from env
   gasMultiplier = null,  // Will use from env
@@ -132,9 +145,10 @@ export async function buyExactETH({
   // STEP 4: Execute transaction with retry logic
   // ═══════════════════════════════════════════════════════════════
   
-  const maxRetries = 2;
+  const maxRetries = Number(process.env.BUY_MAX_RETRIES || '3');
   let lastError = null;
-  
+  let lastErrorMsg = '';
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`[buy] 🎯 Attempt ${attempt}/${maxRetries} - Sending transaction...`);
@@ -177,48 +191,66 @@ export async function buyExactETH({
       
     } catch (error) {
       lastError = error;
-      console.log(`[buy] ❌ Attempt ${attempt} failed: ${error.message}`);
-      
+      lastErrorMsg = extractErrorMessage(error);
+      console.log(`[buy] ❌ Attempt ${attempt} failed: ${lastErrorMsg}`);
+
       // Parse error
-      if (error.message.includes('insufficient funds')) {
+      const lowered = lastErrorMsg.toLowerCase();
+
+      if (lowered.includes('insufficient funds')) {
         throw new Error('Insufficient ETH balance for transaction + gas');
       }
-      
-      if (error.message.includes('nonce')) {
+
+      if (lowered.includes('nonce')) {
         console.log(`[buy] Nonce issue, retrying...`);
         await new Promise(resolve => setTimeout(resolve, 1000));
         continue;
       }
-      
-      if (error.message.includes('replacement fee too low')) {
+
+      if (lowered.includes('replacement fee too low')) {
         console.log(`[buy] Increasing gas price...`);
         maxPriorityFeePerGas = maxPriorityFeePerGas * 110n / 100n; // +10%
         maxFeePerGas = maxFeePerGas * 110n / 100n;
         continue;
       }
-      
+
       // If this is not the last attempt, wait and retry
       if (attempt < maxRetries) {
         console.log(`[buy] Waiting 2s before retry...`);
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Increase slippage for retry
-        slippageBps = Math.min(slippageBps + 500, 5000); // Add 5%, max 50%
-        console.log(`[buy] Increasing slippage to ${slippageBps/100}% for retry`);
-        
-        // Recalculate amountOutMin
-        try {
-          const amounts = await routerContract.getAmountsOut(amountWei, [weth, token]);
-          amountOutMin = (amounts[1] * BigInt(10000 - slippageBps)) / 10000n;
-        } catch {}
-        
+
+        const priceRevert = lowered.includes('insufficient_output_amount') ||
+                             lowered.includes('insufficient_input_amount');
+
+        if (priceRevert && attempt === maxRetries - 1) {
+          console.log('[buy] ⚠️  Final retry will accept any output (amountOutMin=0)');
+          amountOutMin = 0n;
+        } else {
+          // Increase slippage for retry (more aggressive if price moved)
+          const bump = priceRevert ? 1500 : 500; // +15% if price moved hard
+          slippageBps = Math.min(slippageBps + bump, 9500); // Cap at 95%
+          console.log(`[buy] Increasing slippage to ${slippageBps/100}% for retry`);
+
+          // Recalculate amountOutMin
+          try {
+            const amounts = await routerContract.getAmountsOut(amountWei, [weth, token]);
+            amountOutMin = (amounts[1] * BigInt(10000 - slippageBps)) / 10000n;
+          } catch (quoteError) {
+            console.log(`[buy] ⚠️  Quote failed on retry: ${extractErrorMessage(quoteError)}`);
+            if (priceRevert) {
+              console.log('[buy] ➜ Fallback to amountOutMin=0 for next attempt');
+              amountOutMin = 0n;
+            }
+          }
+        }
+
         continue;
       }
     }
   }
-  
+
   // All retries failed
-  throw new Error(`Buy failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`);
+  throw new Error(`Buy failed after ${maxRetries} attempts: ${lastErrorMsg || lastError?.message || 'Unknown error'}`);
 }
 
 /**
