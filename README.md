@@ -16,7 +16,6 @@ Scanner này quét mempool Ethereum, áp dụng bộ lọc an toàn và gửi t�
 | 🍌 **Banana Gun Auto Trade** | Tự động chat lệnh Banana Gun qua Telegram, log gas & Banana fee, chênh lệch giá gốc ↔ giá mua | ✅ |
 | 💰 **Trade Lifecycle Reports** | Sau mỗi lệnh bán gửi P&L %, lời/lỗ ETH, thời gian hold, gas từng giao dịch | ✅ |
 | ⏳ **10 phút Stop-loss** | Sau `AUTO_SELL_TIMEOUT_MINUTES` nếu chưa hòa vốn → bán và báo mức lỗ | ✅ |
-| 📊 **Concurrent Trade Guard** | Giới hạn số lệnh xử lý đồng thời qua `MAX_CONCURRENT_TRADES` để tránh nghẽn lệnh | ✅ |
 | 🚨 **Rug Pull Front-run** | Phát hiện rút LP → gửi Banana Gun sell trước chủ token, thông báo rõ ràng | ✅ |
 | 📊 **Session Summary** | Khi dừng bot: tổng kết số lệnh, win rate, lời/lỗ, gas, phí Banana | ✅ |
 
@@ -60,7 +59,6 @@ PRICE_GUARD=1
 PRICE_MULTIPLE_ABORT=3
 AUTO_SELL_TIMEOUT_MINUTES=10
 RUG_PULL_THRESHOLD_BPS=500
-MAX_CONCURRENT_TRADES=3
 
 # Telegram (tùy chọn, để nhận thông báo)
 TELEGRAM_TOKEN=1234567890:ABCdef...
@@ -82,9 +80,6 @@ BANANA_GUN_WALLET_ADDRESS=0xYourBananaWallet
 ```
 
 👉 Không cần private key hoặc số dư ETH trong dự án này – bot chỉ gửi tin nhắn Telegram tới Banana Gun để thực hiện lệnh hộ bạn.
-
-`MAX_CONCURRENT_TRADES` giúp tránh việc gửi quá nhiều lệnh Banana Gun cùng lúc khi thị trường có nhiều token mới. Khi đạt giới hạn, bot
-chỉ gửi thông báo “skip” và chờ các lệnh hiện có hoàn tất.
 
 ## ✅ Kiểm tra cấu hình
 

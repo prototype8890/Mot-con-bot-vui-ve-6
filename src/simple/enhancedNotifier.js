@@ -408,7 +408,6 @@ ${etherscanTx ? `🔗 <a href="${etherscanTx}">Sell TX</a>` : ''}
     totalTrades,
     successful,
     failed,
-    aborted,
     totalProfitEth,
     totalLossEth,
     netProfitEth,
@@ -420,7 +419,6 @@ ${etherscanTx ? `🔗 <a href="${etherscanTx}">Sell TX</a>` : ''}
     const msg = `📦 <b>SESSION SUMMARY</b>
 ━━━━━━━━━━━━━━━━
 📈 Trades: ${totalTrades} (✅ ${successful} / ❌ ${failed})
-⚠️ Aborted: ${aborted}
 🏆 Win rate: ${winRate.toFixed(2)}%
 
 💰 Profit: +${totalProfitEth.toFixed(4)} ETH
