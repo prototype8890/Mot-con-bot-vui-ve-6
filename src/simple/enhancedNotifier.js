@@ -1,409 +1,354 @@
 import { ethers } from 'ethers';
 
-/**
- * 📱 Enhanced Notification System
- * Đáp ứng 5 yêu cầu:
- * 1. Block number khi mua
- * 2. Gas fees chi tiết
- * 3. Dexscreener link
- * 4. Thông báo cả pair bị reject
- * 5. Chỉ thông báo khi có AddLP (không báo token mới chưa LP)
- */
+const LEVEL_EMOJI = {
+  INFO: 'ℹ️',
+  SUCCESS: '✅',
+  WARNING: '⚠️',
+  CRITICAL: '🛑'
+};
+
+function formatDateTime(timestamp) {
+  if (!timestamp) return 'N/A';
+  const date = new Date(Number(timestamp) * 1000);
+  if (Number.isNaN(date.getTime())) return 'N/A';
+  return date.toLocaleString('vi-VN');
+}
 
 export class EnhancedNotifier {
   constructor(telegramBot, chatId) {
     this.bot = telegramBot;
     this.chatId = chatId;
-    this.enabled = telegramBot && chatId;
+    this.enabled = Boolean(telegramBot && chatId);
   }
 
   async send(message) {
     if (!this.enabled) return;
     try {
-      await this.bot.sendMessage(this.chatId, message, { 
+      await this.bot.sendMessage(this.chatId, message, {
         disable_web_page_preview: true,
         parse_mode: 'HTML'
       });
-    } catch (e) {
-      console.error('[Notifier] Send failed:', e.message);
+    } catch (error) {
+      console.error('[Notifier] Send failed:', error.message);
     }
   }
 
-  // ════════════════════════════════════════════════════════════
-  // 🔍 CANDIDATE DETECTED (Yêu cầu #5: Chỉ khi có AddLP)
-  // ════════════════════════════════════════════════════════════
-  async notifyCandidate({ token, pair, eth, blockNumber, txHash }) {
-    const dexscreener = `https://dexscreener.com/ethereum/${pair}`;
-    const etherscan = `https://etherscan.io/address/${token}`;
-    
-    const msg = `🔍 <b>CANDIDATE DETECTED</b>
-━━━━━━━━━━━━━━━━
-📍 Pair: <code>${pair.slice(0,8)}...${pair.slice(-6)}</code>
-🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>
-💧 LP: <b>${eth.toFixed(4)} ETH</b>
-📦 Block: <b>#${blockNumber}</b>
-
-🔗 <a href="${dexscreener}">Dexscreener</a>
-🔗 <a href="${etherscan}">Etherscan</a>
-${txHash ? `🔗 <a href="https://etherscan.io/tx/${txHash}">AddLP TX</a>` : ''}
-
-⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
-
-    await this.send(msg);
+  async sendLevel(level, title, lines = []) {
+    if (!this.enabled) return;
+    const emoji = LEVEL_EMOJI[level] || LEVEL_EMOJI.INFO;
+    const body = Array.isArray(lines) ? lines.filter(Boolean).join('\n') : lines;
+    await this.send(`${emoji} <b>${title}</b>\n${body}`);
   }
 
-  // ════════════════════════════════════════════════════════════
-  // ⏭️ SKIP / REJECT (Yêu cầu #4: Thông báo cả pair bị reject)
-  // ════════════════════════════════════════════════════════════
-  async notifySkip({ token, pair, reason, details, blockNumber, lpEth }) {
-    const dexscreener = `https://dexscreener.com/ethereum/${pair}`;
-    
-    const msg = `⏭️ <b>SKIPPED</b>
-━━━━━━━━━━━━━━━━
-🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>
-💧 LP: ${lpEth ? `${lpEth.toFixed(4)} ETH` : 'N/A'}
-📦 Block: ${blockNumber ? `#${blockNumber}` : 'N/A'}
-
-❌ <b>Lý do:</b> ${reason}
-${details ? `📝 Chi tiết: ${details}` : ''}
-
-🔗 <a href="${dexscreener}">View on Dexscreener</a>
-
-⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
-
-    await this.send(msg);
+  async notifyBoot({ network, chainId, hasWSS, settings }) {
+    await this.sendLevel('INFO', 'SCANNER ONLINE', [
+      '━━━━━━━━━━━━━━━━',
+      `🌐 Network: ${network} (${chainId})`,
+      `🔌 RPC: ${hasWSS ? 'WebSocket ✅ realtime' : 'HTTP fallback ⚠️'}`,
+      '',
+      '⚙️ <b>Filters:</b>',
+      `  • LP Range: ${settings.minLP}-${settings.maxLP} ETH`,
+      `  • Tax Limit: ${settings.taxMax} BPS (mode: ${settings.taxMode})`,
+      `  • Price Guard: ${settings.priceGuard ? `${settings.priceMultiple}x` : 'Disabled'}`,
+      `  • ML Threshold: ${settings.mlThreshold ?? 'N/A'}`,
+      `  • Max Consecutive Losses: ${settings.maxConsecutiveLosses}`,
+      '',
+      '🍌 Banana Gun auto trade đang bật.',
+      '',
+      `⏰ ${new Date().toLocaleTimeString('vi-VN')}`
+    ]);
   }
 
-  // ════════════════════════════════════════════════════════════
-  // 🎯 BUY ATTEMPT
-  // ════════════════════════════════════════════════════════════
-  async notifyBuyAttempt({ token, pair, amountETH, expectedBlock, basePrice }) {
-    const dexscreener = `https://dexscreener.com/ethereum/${pair}`;
-    
-    const msg = `🎯 <b>BUYING...</b>
-━━━━━━━━━━━━━━━━
-🪙 Token: <code>${token.slice(0,10)}...</code>
-💰 Amount: <b>${ethers.formatEther(amountETH)} ETH</b>
-📈 Base Price: ${basePrice}
-📦 Target Block: ~#${expectedBlock}
-
-🔗 <a href="${dexscreener}">Dexscreener</a>
-
-⏳ Waiting for confirmation...`;
-
-    await this.send(msg);
-  }
-
-  // ════════════════════════════════════════════════════════════
-  // ✅ BUY SUCCESS (Yêu cầu #1, #2, #3)
-  // ════════════════════════════════════════════════════════════
-  async notifyBuySuccess({ 
-    token, 
-    pair,
-    tokensReceived, 
-    decimals,
-    costETH, 
-    buyPrice,
-    txHash,
-    blockNumber,        // ✅ Yêu cầu #1: Block khi mua
-    gasUsed,           // ✅ Yêu cầu #2: Gas fees
-    effectiveGasPrice,
-    gasCostETH,
-    totalCostETH,      // cost + gas
-    candidateBlock,    // Block phát hiện candidate
-    timeTaken
-  }) {
-    const dexscreener = `https://dexscreener.com/ethereum/${pair}`; // ✅ Yêu cầu #3
-    const etherscanTx = `https://etherscan.io/tx/${txHash}`;
-    const etherscanToken = `https://etherscan.io/address/${token}`;
-    
-    // ✅ Yêu cầu #1: Tính block delay
-    const blockDelay = candidateBlock ? blockNumber - candidateBlock : 0;
-    
-    const msg = `✅ <b>BUY SUCCESS</b>
-━━━━━━━━━━━━━━━━
-🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>
-📦 Amount: <b>${ethers.formatUnits(tokensReceived, decimals)}</b>
-
-💰 <b>Cost Breakdown:</b>
-  • Token Cost: ${ethers.formatEther(costETH)} ETH
-  • Gas Used: ${gasUsed.toLocaleString()}
-  • Gas Price: ${ethers.formatUnits(effectiveGasPrice, 'gwei')} Gwei
-  • Gas Cost: <b>${gasCostETH} ETH</b>
-  • <b>Total Cost: ${totalCostETH} ETH</b>
-
-📊 <b>Execution Stats:</b>
-  • Detected at Block: #${candidateBlock || 'N/A'}
-  • Bought at Block: <b>#${blockNumber}</b>
-  • Block Delay: <b>${blockDelay} blocks</b>
-  • Time Taken: ${timeTaken}s
-
-📈 Buy Price: ${buyPrice}
-
-🔗 <a href="${dexscreener}">Dexscreener</a>
-🔗 <a href="${etherscanTx}">Buy TX</a>
-🔗 <a href="${etherscanToken}">Token Contract</a>
-
-⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
-
-    await this.send(msg);
-  }
-
-  // ════════════════════════════════════════════════════════════
-  // ❌ BUY FAILED
-  // ════════════════════════════════════════════════════════════
-  async notifyBuyFail({ token, pair, error, suggestion, blockNumber }) {
-    const dexscreener = `https://dexscreener.com/ethereum/${pair}`;
-    
-    const msg = `❌ <b>BUY FAILED</b>
-━━━━━━━━━━━━━━━━
-🪙 Token: <code>${token.slice(0,10)}...</code>
-📦 Block: ${blockNumber ? `#${blockNumber}` : 'N/A'}
-
-❗ <b>Error:</b> ${error}
-${suggestion ? `💡 <b>Suggestion:</b> ${suggestion}` : ''}
-
-🔗 <a href="${dexscreener}">Dexscreener</a>
-
-⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
-
-    await this.send(msg);
-  }
-
-  // ════════════════════════════════════════════════════════════
-  // 🔔 SELL TRIGGER
-  // ════════════════════════════════════════════════════════════
-  async notifySellTrigger({ token, pair, reason, profitPct, holdTime, currentValueETH }) {
-    const dexscreener = `https://dexscreener.com/ethereum/${pair}`;
-    
-    const profitEmoji = profitPct >= 0 ? '📈' : '📉';
-    const profitColor = profitPct >= 0 ? '+' : '';
-    
-    const msg = `🔔 <b>SELL TRIGGERED</b>
-━━━━━━━━━━━━━━━━
-🪙 Token: <code>${token.slice(0,10)}...</code>
-📊 Reason: <b>${reason}</b>
-
-💹 Current P&L: ${profitEmoji} <b>${profitColor}${profitPct.toFixed(2)}%</b>
-💰 Current Value: ${currentValueETH} ETH
-⏱️ Hold Time: ${holdTime}
-
-🔗 <a href="${dexscreener}">Dexscreener</a>
-
-⏳ Executing sell...`;
-
-    await this.send(msg);
-  }
-
-  // ════════════════════════════════════════════════════════════
-  // 💰 SELL SUCCESS (Yêu cầu #2: Gas fees)
-  // ════════════════════════════════════════════════════════════
-  async notifySellSuccess({
+  async notifyCandidate({
     token,
     pair,
-    tokensSold,
-    decimals,
-    ethReceived,
-    profitPct,
-    profitETH,
-    holdTime,
-    txHash,
+    eth,
     blockNumber,
-    // ✅ Yêu cầu #2: Gas fees cho sell
-    gasUsed,
-    effectiveGasPrice,
-    gasCostETH,
-    netProfitETH,      // profit - gas
-    buyBlockNumber,
-    totalGasETH        // Buy gas + Sell gas
+    txHash,
+    creation,
+    lpTimestamp,
+    metadata,
+    dex
   }) {
-    const dexscreener = `https://dexscreener.com/ethereum/${pair}`;
-    const etherscanTx = `https://etherscan.io/tx/${txHash}`;
-    
-    const profitEmoji = profitPct >= 0 ? '💰' : '📉';
-    const profitSign = profitPct >= 0 ? '+' : '';
-    const netProfitSign = netProfitETH >= 0 ? '+' : '';
-    
-    const msg = `${profitEmoji} <b>SELL SUCCESS</b>
-━━━━━━━━━━━━━━━━
-🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>
-📦 Sold: ${ethers.formatUnits(tokensSold, decimals)}
+    const dexscreener = `https://dexscreener.com/${dex?.slug || 'ethereum'}/${pair}`;
+    const etherscan = `https://${dex?.explorer || 'etherscan.io'}/address/${token}`;
+    const label = metadata?.symbol
+      ? `${metadata.symbol} (${metadata.name || 'Token'})`
+      : `${token.slice(0, 8)}...${token.slice(-6)}`;
 
-💵 <b>Returns:</b>
-  • ETH Received: ${ethReceived} ETH
-  • Gross P&L: ${profitSign}${profitETH} ETH (${profitSign}${profitPct.toFixed(2)}%)
+    const creationLine = creation
+      ? `🆕 Deploy: <b>#${creation.blockNumber}</b> (${formatDateTime(creation.timestamp)})`
+      : '🆕 Deploy: <i>Không xác định</i>';
 
-💸 <b>Gas Costs:</b>
-  • Sell Gas: ${gasUsed.toLocaleString()} @ ${ethers.formatUnits(effectiveGasPrice, 'gwei')} Gwei
-  • Sell Gas Cost: ${gasCostETH} ETH
-  • Total Gas (Buy+Sell): <b>${totalGasETH} ETH</b>
+    const addLpLine = lpTimestamp
+      ? `💧 Add LP: <b>#${blockNumber}</b> (${formatDateTime(lpTimestamp)})`
+      : `💧 Add LP: <b>#${blockNumber}</b>`;
 
-💹 <b>Net P&L: ${netProfitSign}${netProfitETH} ETH</b>
-
-📊 <b>Trade Summary:</b>
-  • Buy Block: #${buyBlockNumber}
-  • Sell Block: #${blockNumber}
-  • Hold Time: ${holdTime}
-  • Blocks Held: ${blockNumber - buyBlockNumber}
-
-🔗 <a href="${dexscreener}">Dexscreener</a>
-🔗 <a href="${etherscanTx}">Sell TX</a>
-
-⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
-
-    await this.send(msg);
+    await this.sendLevel('INFO', 'TARGET FOUND', [
+      '━━━━━━━━━━━━━━━━',
+      `🪙 Token: <b>${label}</b>`,
+      `📍 Pair: <code>${pair.slice(0, 8)}...${pair.slice(-6)}</code>`,
+      `💧 LP: <b>${eth.toFixed(4)} ETH</b>`,
+      creationLine,
+      addLpLine,
+      '',
+      `🔗 <a href="${dexscreener}">Dexscreener</a>`,
+      `🔗 <a href="${etherscan}">Explorer</a>`,
+      txHash ? `🔗 <a href="https://${dex?.explorer || 'etherscan.io'}/tx/${txHash}">AddLP TX</a>` : '',
+      '',
+      `⏰ ${new Date().toLocaleTimeString('vi-VN')}`
+    ]);
   }
 
-  // ════════════════════════════════════════════════════════════
-  // ⚠️ SELL FAILED
-  // ════════════════════════════════════════════════════════════
-  async notifySellFail({ token, pair, error, willRetry }) {
-    const dexscreener = `https://dexscreener.com/ethereum/${pair}`;
-    
-    const msg = `⚠️ <b>SELL FAILED</b>
-━━━━━━━━━━━━━━━━
-🪙 Token: <code>${token.slice(0,10)}...</code>
-
-❗ <b>Error:</b> ${error}
-${willRetry ? '🔄 Will retry...' : '⛔ No more retries'}
-
-🔗 <a href="${dexscreener}">Dexscreener</a>
-
-⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
-
-    await this.send(msg);
-  }
-
-  // ════════════════════════════════════════════════════════════
-  // 🚨 RUG ALERT
-  // ════════════════════════════════════════════════════════════
-  async notifyRugAlert({ token, pair, kind, rugTxHash, blockNumber }) {
-    const dexscreener = `https://dexscreener.com/ethereum/${pair}`;
-    const rugTx = `https://etherscan.io/tx/${rugTxHash}`;
-    
-    const msg = `🚨 <b>RUG PULL DETECTED</b>
-━━━━━━━━━━━━━━━━
-🪙 Token: <code>${token.slice(0,10)}...</code>
-⚠️ Type: <b>${kind}</b>
-📦 Block: #${blockNumber}
-
-🔗 <a href="${rugTx}">Rug Transaction</a>
-🔗 <a href="${dexscreener}">Dexscreener</a>
-
-⚡ <b>EMERGENCY SELL EXECUTING...</b>`;
-
-    await this.send(msg);
-  }
-
-  // ════════════════════════════════════════════════════════════
-  // 📊 STATISTICS
-  // ════════════════════════════════════════════════════════════
-  async notifyStats({ 
-    totalTrades, 
-    successful, 
-    failed, 
-    totalProfitETH,
-    totalLossETH,
-    totalGasETH,
-    netProfitETH,
-    winRate,
-    avgBlockDelay,
-    fastestBlock,
-    avgHoldTime
+  async notifySignal({
+    token,
+    pair,
+    blockNumber,
+    lpEth,
+    basePriceTokensPerEth,
+    taxBps,
+    taxDetails,
+    priceGuardInfo,
+    bananaGun,
+    metadata,
+    creation,
+    dex,
+    mlScore,
+    honeypot,
+    gasRecommendation
   }) {
-    const netSign = netProfitETH >= 0 ? '+' : '';
-    const emoji = netProfitETH >= 0 ? '📈' : '📉';
-    
-    const msg = `📊 <b>BOT STATISTICS</b>
-━━━━━━━━━━━━━━━━
-📈 <b>Trades:</b>
-  • Total: ${totalTrades}
-  • Success: ${successful}
-  • Failed: ${failed}
-  • Win Rate: <b>${winRate}%</b>
+    const dexscreener = `https://dexscreener.com/${dex?.slug || 'ethereum'}/${pair}`;
+    const explorer = `https://${dex?.explorer || 'etherscan.io'}/address/${token}`;
+    const bananaGunLink = `https://app.bananagun.io/#/swap?chain=${dex?.chain || 'eth'}&token=${token}`;
 
-💰 <b>P&L:</b>
-  • Gross Profit: +${totalProfitETH} ETH
-  • Gross Loss: ${totalLossETH} ETH
-  • Total Gas: ${totalGasETH} ETH
-  • <b>Net P&L: ${netSign}${netProfitETH} ETH</b>
+    const basePrice = basePriceTokensPerEth > 0n
+      ? ethers.formatUnits(basePriceTokensPerEth, 18)
+      : 'N/A';
 
-⚡ <b>Performance:</b>
-  • Avg Block Delay: ${avgBlockDelay} blocks
-  • Fastest Snipe: ${fastestBlock} blocks
-  • Avg Hold Time: ${avgHoldTime}
+    const taxText = taxBps !== null
+      ? `${taxBps} BPS (${(taxBps / 100).toFixed(2)}%)`
+      : 'Unknown (allowed by config)';
 
-${emoji} <b>${netProfitETH >= 0 ? 'PROFITABLE' : 'IN LOSS'}</b>
+    let priceGuardText = 'Disabled';
+    if (priceGuardInfo) {
+      if (priceGuardInfo.status === 'skipped') {
+        priceGuardText = 'Skipped (price unavailable)';
+      } else if (priceGuardInfo.status === 'ok') {
+        priceGuardText = `Change: ${priceGuardInfo.priceChangePercent}%`;
+      }
+    }
 
-⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
+    const autoText = bananaGun
+      ? `🤖 <b>Auto Banana Gun:</b> ${bananaGun.amountEth} ETH (slip ${bananaGun.slippageBps} bps, prio ${bananaGun.priorityFeeGwei} gwei, gas x${bananaGun.gasMultiplier})`
+      : '👉 <b>Hành động:</b> Mở Banana Gun, dán địa chỉ token và kiểm tra trước khi mua';
 
-    await this.send(msg);
+    const deployLine = creation ? `🆕 Deploy Block: #${creation.blockNumber}` : '';
+    const label = metadata?.symbol
+      ? `${metadata.symbol} (${metadata.name || 'Token'})`
+      : `${token.slice(0,8)}...${token.slice(-6)}`;
+
+    const mlLine = mlScore ? `🧠 ML Score: <b>${mlScore.score.toFixed(2)}</b> / ${mlScore.threshold} (${mlScore.passed ? 'PASS' : 'FAIL'})` : null;
+    const honeypotLine = honeypot?.suspicious ? `🚨 Honeypot risk: ${honeypot.reasons.join(', ')}` : '🛡️ Honeypot check: Clear';
+
+    const gasLine = gasRecommendation ? `⛽ Gas hint: ${gasRecommendation}` : null;
+
+    await this.sendLevel('SUCCESS', 'SIGNAL READY', [
+      '━━━━━━━━━━━━━━━━',
+      `🪙 Token: <b>${label}</b>`,
+      `📍 Pair: <code>${pair.slice(0,8)}...${pair.slice(-6)}</code>`,
+      `📦 Block: <b>#${blockNumber}</b>`,
+      `💧 LP: <b>${lpEth.toFixed(4)} ETH</b>`,
+      `💰 Base Price: ${basePrice} tokens/ETH`,
+      `💸 Tax: ${taxText}`,
+      `🛡️ Price Guard: ${priceGuardText}`,
+      deployLine,
+      mlLine,
+      honeypotLine,
+      gasLine,
+      '',
+      autoText,
+      '',
+      `🔗 <a href="${bananaGunLink}">Open in Banana Gun</a>`,
+      `🔗 <a href="${dexscreener}">Dexscreener</a>`,
+      `🔗 <a href="${explorer}">Explorer</a>`,
+      '',
+      `📝 ${taxDetails || 'Passed all configured filters'}`,
+      `⏰ ${new Date().toLocaleTimeString('vi-VN')}`
+    ]);
   }
 
-  // ════════════════════════════════════════════════════════════
-  // 🚀 BOOT MESSAGE
-  // ════════════════════════════════════════════════════════════
-  async notifyBoot({ 
-    network, 
-    chainId, 
-    wallet, 
-    balance, 
-    hasWSS, 
-    settings 
-  }) {
-    const msg = `🚀 <b>BOT STARTED</b>
-━━━━━━━━━━━━━━━━
-🌐 Network: ${network} (${chainId})
-👛 Wallet: <code>${wallet.slice(0,8)}...${wallet.slice(-6)}</code>
-💰 Balance: <b>${balance} ETH</b>
-🔌 RPC: ${hasWSS ? 'WebSocket ✅' : 'HTTP (Fallback) ⚠️'}
+  async notifySkip({ token, pair, reason, details, blockNumber, lpEth, dex, level = 'WARNING' }) {
+    const dexscreener = `https://dexscreener.com/${dex?.slug || 'ethereum'}/${pair}`;
+    const label = `${token.slice(0,8)}...${token.slice(-6)}`;
 
-⚙️ <b>Settings:</b>
-  • LP Range: ${settings.minLP}-${settings.maxLP} ETH
-  • Buy Amount: ${settings.buyETH} ETH
-  • Tax Max: ${settings.taxMax} BPS
-  • TP: ${settings.tpPct}% | Timeout: ${settings.timeout}s
-  • Price Guard: ${settings.priceMultiple}x
-  • Rug Defense: ${settings.rugDefense ? 'ON' : 'OFF'}
-
-━━━━━━━━━━━━━━━━
-✅ <b>Ready to snipe...</b>
-
-⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
-
-    await this.send(msg);
+    await this.sendLevel(level, 'SKIPPED', [
+      '━━━━━━━━━━━━━━━━',
+      `🪙 Token: <code>${label}</code>`,
+      `💧 LP: ${lpEth ? `${lpEth.toFixed(4)} ETH` : 'N/A'}`,
+      `📦 Block: ${blockNumber ? `#${blockNumber}` : 'N/A'}`,
+      '',
+      `❌ <b>Lý do:</b> ${reason}`,
+      details ? `📝 Chi tiết: ${details}` : '',
+      '',
+      `🔗 <a href="${dexscreener}">View on Dexscreener</a>`,
+      '',
+      `⏰ ${new Date().toLocaleTimeString('vi-VN')}`
+    ]);
   }
 
-  // ════════════════════════════════════════════════════════════
-  // 🛑 SHUTDOWN
-  // ════════════════════════════════════════════════════════════
-  async notifyShutdown({ activePositions, reason }) {
-    const msg = `🛑 <b>BOT STOPPING</b>
-━━━━━━━━━━━━━━━━
-⏱️ Active Positions: ${activePositions}
-${reason ? `📝 Reason: ${reason}` : ''}
+  async notifyBananaGunOrder({ token, pair, amountEth, blockNumber, status, orderId, txHash, response, bananaFee, metadata }) {
+    const metadataLines = [];
+    if (metadata?.gasCost) metadataLines.push(`⛽ Gas (Banana): ${metadata.gasCost}`);
+    if (metadata?.responseId) metadataLines.push(`💬 Telegram msg: <code>${metadata.responseId}</code>`);
 
-${activePositions > 0 ? '⚠️ Closing all positions...' : '✅ No open positions'}
+    const metadataText = metadataLines.length ? metadataLines.join('\n') : '';
 
-⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
+    let responseText = 'No response payload';
+    if (response) {
+      if (typeof response === 'string') {
+        responseText = response;
+      } else {
+        try {
+          responseText = JSON.stringify(response, null, 2);
+        } catch (error) {
+          responseText = `Không thể hiển thị response: ${error.message}`;
+        }
+      }
+    }
 
-    await this.send(msg);
+    await this.sendLevel('INFO', 'Banana Gun ORDER SENT', [
+      '━━━━━━━━━━━━━━━━',
+      `🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>`,
+      `💰 Amount: ${amountEth} ETH`,
+      `📦 Block: #${blockNumber}`,
+      `📄 Status: <b>${status}</b>`,
+      orderId ? `🆔 Order ID: <code>${orderId}</code>` : '',
+      bananaFee ? `🍌 Banana Fee: ${bananaFee}` : '',
+      metadataText,
+      txHash ? `🔗 <a href="https://etherscan.io/tx/${txHash}">Submitted TX</a>` : '',
+      '',
+      '📬 Response:',
+      `<code>${responseText}</code>`
+    ]);
+  }
+
+  async notifyBananaGunOrderError({ token, pair, amountEth, blockNumber, error, response }) {
+    await this.sendLevel('CRITICAL', 'Banana Gun ORDER FAILED', [
+      '━━━━━━━━━━━━━━━━',
+      `🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>`,
+      `💰 Amount: ${amountEth}`,
+      `📦 Block: #${blockNumber}`,
+      `⚠️ Error: ${error}`,
+      response ? `<code>${JSON.stringify(response, null, 2)}</code>` : ''
+    ]);
+  }
+
+  async notifyBuyFilled({ trade, receipt, bananaFee, pnl }) {
+    await this.sendLevel('SUCCESS', 'BUY FILLED', [
+      '━━━━━━━━━━━━━━━━',
+      `🪙 Token: <code>${trade.token.slice(0,8)}...${trade.token.slice(-6)}</code>`,
+      `📦 Block: #${receipt.blockNumber}`,
+      `💰 Cost: ${trade.buy.ethSpentEth.toFixed(4)} ETH`,
+      `⛽ Gas: ${trade.buy.gasCostEth.toFixed(5)} ETH`,
+      bananaFee ? `🍌 Fee: ${bananaFee}` : '',
+      pnl ? `📊 Entry Price: ${pnl.entryPrice}` : ''
+    ]);
+  }
+
+  async notifySellFilled({ trade, summary }) {
+    const result = summary.pnlEth >= 0 ? 'SUCCESS' : 'WARNING';
+    await this.sendLevel(result === 'SUCCESS' ? 'SUCCESS' : 'WARNING', 'SELL COMPLETED', [
+      '━━━━━━━━━━━━━━━━',
+      `🪙 Token: <code>${trade.token.slice(0,8)}...${trade.token.slice(-6)}</code>`,
+      `📦 Block: #${summary.blockNumber}`,
+      `💰 Proceeds: ${summary.proceedsEth.toFixed(4)} ETH`,
+      `📊 PnL: ${summary.pnlEth.toFixed(4)} ETH (${summary.pnlPct.toFixed(2)}%)`,
+      `⛽ Gas Total: ${summary.totalGasEth.toFixed(5)} ETH`
+    ]);
+  }
+
+  async notifyTimeoutStopLoss({ token, pair, metadata, pnlPct }) {
+    await this.sendLevel('WARNING', 'TIMEOUT SELL TRIGGERED', [
+      '━━━━━━━━━━━━━━━━',
+      `🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>`,
+      `📊 PnL: ${pnlPct.toFixed(2)}%`,
+      metadata?.symbol ? `📛 Symbol: ${metadata.symbol}` : ''
+    ]);
+  }
+
+  async notifyRugPull({ token, reason, pnlPct }) {
+    await this.sendLevel('CRITICAL', 'RUG DEFENSE SOLD', [
+      '━━━━━━━━━━━━━━━━',
+      `🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>`,
+      `⚠️ Reason: ${reason}`,
+      `📉 Estimated PnL: ${pnlPct.toFixed(2)}%`
+    ]);
+  }
+
+  async notifyCircuitBreaker({ consecutiveLosses, cooldownMinutes }) {
+    await this.sendLevel('CRITICAL', 'CIRCUIT BREAKER TRIGGERED', [
+      '━━━━━━━━━━━━━━━━',
+      `📉 Consecutive losses: ${consecutiveLosses}`,
+      `⏳ Cooldown: ${cooldownMinutes} phút`
+    ]);
+  }
+
+  async notifyCircuitReset() {
+    await this.sendLevel('SUCCESS', 'CIRCUIT BREAKER RESET', [
+      '━━━━━━━━━━━━━━━━',
+      '✅ Trading resumed'
+    ]);
+  }
+
+  async notifyMlReject({ token, score, threshold, breakdown }) {
+    await this.notifySkip({
+      token,
+      pair: token,
+      reason: `ML score ${score.toFixed(2)} dưới ngưỡng ${threshold}`,
+      details: `Breakdown: ${JSON.stringify(breakdown)}`,
+      blockNumber: null,
+      lpEth: null,
+      dex: null,
+      level: 'WARNING'
+    });
+  }
+
+  async notifyHoneypot({ token, reasons }) {
+    await this.notifySkip({
+      token,
+      pair: token,
+      reason: 'Honeypot risk detected',
+      details: reasons.join(', '),
+      blockNumber: null,
+      lpEth: null,
+      dex: null,
+      level: 'CRITICAL'
+    });
+  }
+
+  async notifySummary(stats) {
+    await this.sendLevel('INFO', 'SESSION SUMMARY', [
+      '━━━━━━━━━━━━━━━━',
+      `📊 Attempts: ${stats.attempts}`,
+      `✅ Wins: ${stats.profitable}`,
+      `❌ Losses: ${stats.losing}`,
+      `🚫 Aborted: ${stats.aborted}`,
+      `💰 Profit: ${stats.totalProfitEth.toFixed(4)} ETH`,
+      `💸 Loss: ${stats.totalLossEth.toFixed(4)} ETH`,
+      `⛽ Gas: ${stats.totalGasEth.toFixed(4)} ETH`
+    ]);
+  }
+
+  async notifyShutdown({ reason }) {
+    await this.sendLevel('WARNING', 'SCANNER OFFLINE', [
+      '━━━━━━━━━━━━━━━━',
+      `🛑 Reason: ${reason || 'Unknown'}`,
+      `⏱️ ${new Date().toLocaleTimeString('vi-VN')}`
+    ]);
+  }
+
+  async notifySessionSummary(stats) {
+    await this.notifySummary(stats);
   }
 }
 
-// ════════════════════════════════════════════════════════════
-// 🛠️ HELPER: Format hold time
-// ════════════════════════════════════════════════════════════
-export function formatHoldTime(seconds) {
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
-}
-
-// ════════════════════════════════════════════════════════════
-// 🛠️ HELPER: Calculate gas cost in ETH
-// ════════════════════════════════════════════════════════════
-export function calculateGasCost(gasUsed, effectiveGasPrice) {
-  const gasCostWei = BigInt(gasUsed) * BigInt(effectiveGasPrice);
-  return ethers.formatEther(gasCostWei);
-}
