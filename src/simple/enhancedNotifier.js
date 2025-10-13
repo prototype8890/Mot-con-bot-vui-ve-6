@@ -236,11 +236,59 @@ ${txLink}
 📝 <b>Response:</b>
 <pre>${responseText}</pre>
 
-🔗 <a href="${dexscreener}">Dexscreener</a>
+  async notifySkip({ token, pair, reason, details, blockNumber, lpEth, dex, level = 'WARNING' }) {
+    const dexscreener = `https://dexscreener.com/${dex?.slug || 'ethereum'}/${pair}`;
+    const label = `${token.slice(0,8)}...${token.slice(-6)}`;
 
-⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
+    await this.sendLevel(level, 'SKIPPED', [
+      '━━━━━━━━━━━━━━━━',
+      `🪙 Token: <code>${label}</code>`,
+      `💧 LP: ${lpEth ? `${lpEth.toFixed(4)} ETH` : 'N/A'}`,
+      `📦 Block: ${blockNumber ? `#${blockNumber}` : 'N/A'}`,
+      '',
+      `❌ <b>Lý do:</b> ${reason}`,
+      details ? `📝 Chi tiết: ${details}` : '',
+      '',
+      `🔗 <a href="${dexscreener}">View on Dexscreener</a>`,
+      '',
+      `⏰ ${new Date().toLocaleTimeString('vi-VN')}`
+    ]);
+  }
 
-    await this.send(msg);
+  async notifyBananaGunOrder({ token, pair, amountEth, blockNumber, status, orderId, txHash, response, bananaFee, metadata }) {
+    const metadataLines = [];
+    if (metadata?.gasCost) metadataLines.push(`⛽ Gas (Banana): ${metadata.gasCost}`);
+    if (metadata?.responseId) metadataLines.push(`💬 Telegram msg: <code>${metadata.responseId}</code>`);
+
+    const metadataText = metadataLines.length ? metadataLines.join('\n') : '';
+
+    let responseText = 'No response payload';
+    if (response) {
+      if (typeof response === 'string') {
+        responseText = response;
+      } else {
+        try {
+          responseText = JSON.stringify(response, null, 2);
+        } catch (error) {
+          responseText = `Không thể hiển thị response: ${error.message}`;
+        }
+      }
+    }
+
+    await this.sendLevel('INFO', 'Banana Gun ORDER SENT', [
+      '━━━━━━━━━━━━━━━━',
+      `🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>`,
+      `💰 Amount: ${amountEth} ETH`,
+      `📦 Block: #${blockNumber}`,
+      `📄 Status: <b>${status}</b>`,
+      orderId ? `🆔 Order ID: <code>${orderId}</code>` : '',
+      bananaFee ? `🍌 Banana Fee: ${bananaFee}` : '',
+      metadataText,
+      txHash ? `🔗 <a href="https://etherscan.io/tx/${txHash}">Submitted TX</a>` : '',
+      '',
+      '📬 Response:',
+      `<code>${responseText}</code>`
+    ]);
   }
 
   async notifyBananaGunBuyReport({
@@ -352,7 +400,13 @@ ${etherscanTx ? `🔗 <a href="${etherscanTx}">Sell TX</a>` : ''}
 
 ⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
 
-    await this.send(msg);
+  async notifyTimeoutStopLoss({ token, pair, metadata, pnlPct }) {
+    await this.sendLevel('WARNING', 'TIMEOUT SELL TRIGGERED', [
+      '━━━━━━━━━━━━━━━━',
+      `🪙 Token: <code>${token.slice(0,8)}...${token.slice(-6)}</code>`,
+      `📊 PnL: ${pnlPct.toFixed(2)}%`,
+      metadata?.symbol ? `📛 Symbol: ${metadata.symbol}` : ''
+    ]);
   }
 
   async notifyRugAlert({ token, pair, kind, rugTxHash, blockNumber, metadata }) {
@@ -427,11 +481,26 @@ ${etherscanTx ? `🔗 <a href="${etherscanTx}">Sell TX</a>` : ''}
 🍌 Banana Fees: ${bananaFees.length ? bananaFees.join(', ') : 'Unknown'}
 📊 Net: ${netSign}${netProfitEth.toFixed(4)} ETH
 
-⏰ ${new Date().toLocaleTimeString('vi-VN')}`;
-
-    await this.send(msg);
+  async notifySummary(stats) {
+    await this.sendLevel('INFO', 'SESSION SUMMARY', [
+      '━━━━━━━━━━━━━━━━',
+      `📊 Attempts: ${stats.attempts}`,
+      `✅ Wins: ${stats.profitable}`,
+      `❌ Losses: ${stats.losing}`,
+      `🚫 Aborted: ${stats.aborted}`,
+      `💰 Profit: ${stats.totalProfitEth.toFixed(4)} ETH`,
+      `💸 Loss: ${stats.totalLossEth.toFixed(4)} ETH`,
+      `⛽ Gas: ${stats.totalGasEth.toFixed(4)} ETH`
+    ]);
   }
-}
+
+  async notifyShutdown({ reason }) {
+    await this.sendLevel('WARNING', 'SCANNER OFFLINE', [
+      '━━━━━━━━━━━━━━━━',
+      `🛑 Reason: ${reason || 'Unknown'}`,
+      `⏱️ ${new Date().toLocaleTimeString('vi-VN')}`
+    ]);
+  }
 
 export function formatHoldTime(seconds) {
   if (seconds < 60) return `${seconds}s`;

@@ -846,6 +846,23 @@ function toFloat(value) {
       return;
     }
 
+  function scheduleTimeout(trade, key) {
+    const timeoutMinutes = Math.max(1, Math.round(c.timeoutMs / 60000));
+    const timer = setTimeout(() => {
+      handleSell({
+        trade,
+        key,
+        reason: `Timeout ${timeoutMinutes} phút`,
+        notifyTimeout: true
+      });
+    }, c.timeoutMs);
+    trade.timers = trade.timers || [];
+    trade.timers.push(timer);
+  }
+
+  function startSmartStops(trade, key) {
+    const interval = setInterval(async () => {
+      if (trade.status !== 'bought') return;
       try {
         const baseTokensPerEthVal = await basePriceTokensPerEth({
           provider,
@@ -878,14 +895,17 @@ function toFloat(value) {
         return;
       }
 
-        if (!taxRes.ok) {
-          await notifier.notifySkip({
-            token, pair,
-            reason: taxRes.reason,
-            details: taxRes.details,
-            blockNumber: candidateBlock,
-            lpEth: eth
-          });
+        const targetPct = c.takeProfitTargetBps / 100;
+        const trailPct = c.takeProfitTrailBps / 100;
+        const stopPct = c.trailingStopBps / 100;
+
+        if (!trade.takeProfitArmed && trade.currentPnlPct >= targetPct) {
+          trade.takeProfitArmed = true;
+        }
+
+        if (trade.takeProfitArmed && drawdown >= trailPct) {
+          clearInterval(interval);
+          await handleSell({ trade, key, reason: 'Take-profit trailing', notifyTimeout: false });
           return;
         }
 
@@ -903,8 +923,6 @@ function toFloat(value) {
             blockNumber: candidateBlock,
             lpEth: eth
           });
-          return;
-        }
 
         let priceGuardInfo = null;
         if (c.priceGuard) {
@@ -950,7 +968,8 @@ function toFloat(value) {
                 reason: `Price increased ${priceMultiple.toFixed(2)}x (limit: ${c.priceMultipleAbort}x)`,
                 details: 'Possible frontrun detected',
                 blockNumber: candidateBlock,
-                lpEth: eth
+                lpEth: eth,
+                dex
               });
               return;
             }
@@ -962,6 +981,37 @@ function toFloat(value) {
             };
           }
         }
+      }
+
+      const honeypot = await runHoneypotChecks({
+        provider,
+        token,
+        pair,
+        router: routerAddress,
+        weth: c.weth,
+        minLiquidityRatio: c.honeypotMinLpRatio
+      });
+
+      if (honeypot.suspicious) {
+        await notifier.notifyHoneypot({ token, reasons: honeypot.reasons });
+        return;
+      }
+
+      let gasRecommendationText = null;
+      try {
+        const feeSuggestion = await gasOptimizer.getFeeData(provider);
+        if (feeSuggestion) {
+          const maxFee = Number(ethers.formatUnits(feeSuggestion.maxFeePerGas, 'gwei')).toFixed(2);
+          const priority = Number(ethers.formatUnits(feeSuggestion.maxPriorityFeePerGas, 'gwei')).toFixed(2);
+          gasRecommendationText = `${maxFee} gwei / ${priority} gwei`;
+        }
+      } catch (error) {
+        console.warn('[GasOptimizer] Failed to fetch fee suggestion:', error.message);
+      }
+
+      const basePriceString = ethers.formatUnits(baseTokensPerEthVal, 18);
+
+      signaledTokens.add(tokenLower);
 
         const basePriceString = ethers.formatUnits(baseTokensPerEthVal, 18);
 
