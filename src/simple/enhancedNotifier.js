@@ -405,11 +405,9 @@ ${etherscanTx ? `🔗 <a href="${etherscanTx}">Sell TX</a>` : ''}
   }
 
   async notifySessionSummary({
-    attempts,
-    completed,
-    profitable,
-    losing,
-    aborted,
+    totalTrades,
+    successful,
+    failed,
     totalProfitEth,
     totalLossEth,
     netProfitEth,
@@ -418,13 +416,9 @@ ${etherscanTx ? `🔗 <a href="${etherscanTx}">Sell TX</a>` : ''}
     gasEth
   }) {
     const netSign = netProfitEth >= 0 ? '+' : '';
-    const failedTotal = losing + aborted;
     const msg = `📦 <b>SESSION SUMMARY</b>
 ━━━━━━━━━━━━━━━━
-📈 Attempts: ${attempts}
-🏁 Completed: ${completed} (✅ ${profitable} / ❌ ${losing})
-⚠️ Aborted: ${aborted}
-📉 Failed (incl. aborted): ${failedTotal}
+📈 Trades: ${totalTrades} (✅ ${successful} / ❌ ${failed})
 🏆 Win rate: ${winRate.toFixed(2)}%
 
 💰 Profit: +${totalProfitEth.toFixed(4)} ETH
