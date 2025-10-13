@@ -843,6 +843,8 @@ function toFloat(value) {
         lpTimestamp: block?.timestamp || Math.floor(Date.now() / 1000),
         metadata
       });
+      return;
+    }
 
       try {
         const baseTokensPerEthVal = await basePriceTokensPerEth({
@@ -873,6 +875,8 @@ function toFloat(value) {
           weth: c.weth,
           pair
         });
+        return;
+      }
 
         if (!taxRes.ok) {
           await notifier.notifySkip({
@@ -981,6 +985,9 @@ function toFloat(value) {
           metadata,
           creation
         });
+        await finalizeTrade(tokenLower, trade, { outcome: 'aborted' });
+        return;
+      }
 
         if (!bananaGunClient.enabled) {
           console.log(`🍌 Signal ready for ${token} → copy to Banana Gun manually.`);
@@ -1129,7 +1136,6 @@ function toFloat(value) {
         activeTrades.delete(tokenLower);
       }
     }
-  });
 
   process.on('SIGINT', async () => {
     console.log('\n⏹️  Shutting down scanner...');
