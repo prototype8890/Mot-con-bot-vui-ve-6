@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * 🧪 TEST SETUP SCRIPT
- * Kiểm tra toàn bộ cấu hình trước khi chạy bot
- * 
+ * 🧪 SETUP CHECKER (Signal + Banana Gun)
+ * Kiểm tra cấu hình cần thiết để chạy mempool scanner và (tùy chọn) auto-buy qua Banana Gun.
+ *
  * Chạy: node test_setup.js
  */
 
@@ -28,64 +28,261 @@ function success(msg) { log('✅', COLORS.green, msg); }
 function error(msg) { log('❌', COLORS.red, msg); }
 function warn(msg) { log('⚠️ ', COLORS.yellow, msg); }
 function info(msg) { log('ℹ️ ', COLORS.blue, msg); }
-function title(msg) { 
+function title(msg) {
   console.log(`\n${COLORS.magenta}${'═'.repeat(50)}`);
   console.log(`🎯 ${msg}`);
   console.log(`${'═'.repeat(50)}${COLORS.reset}\n`);
 }
 
+function toNumber(value, fallback) {
+  if (value === undefined || value === null || value === '') return Number(fallback);
+  const num = Number(value);
+  return Number.isFinite(num) ? num : NaN;
+}
+
 async function testEnvVariables() {
   title('KIỂM TRA FILE .ENV');
-  
-  const required = {
-    'RPC_URLS': process.env.RPC_URLS,
-    'PRIVATE_KEY': process.env.PRIVATE_KEY,
-    'WALLET_ADDRESS': process.env.WALLET_ADDRESS,
-    'TELEGRAM_TOKEN': process.env.TELEGRAM_TOKEN,
-    'TELEGRAM_CHAT_ID': process.env.TELEGRAM_CHAT_ID
-  };
 
   let allOk = true;
-  
-  for (const [key, value] of Object.entries(required)) {
-    if (!value) {
-      error(`${key} thiếu trong .env`);
-      allOk = false;
+
+  const rpcValue = process.env.RPC_URLS;
+  if (!rpcValue) {
+    error('RPC_URLS thiếu trong .env');
+    allOk = false;
+  } else {
+    if (!rpcValue.includes('wss://')) {
+      warn('RPC_URLS không có WebSocket (wss://) - scanner sẽ chạy ở chế độ fallback chậm hơn');
     } else {
-      // Kiểm tra format
-      if (key === 'PRIVATE_KEY' && !value.startsWith('0x')) {
-        error(`${key} phải bắt đầu bằng 0x`);
-        allOk = false;
-      } else if (key === 'WALLET_ADDRESS' && !value.startsWith('0x')) {
-        error(`${key} phải bắt đầu bằng 0x`);
-        allOk = false;
-      } else if (key === 'RPC_URLS' && !value.includes('wss://')) {
-        warn(`${key} không có WebSocket (wss://) - Mempool sniping sẽ KHÔNG hoạt động!`);
-        allOk = false;
-      } else {
-        success(`${key}: ${value.slice(0, 20)}...`);
-      }
+      success(`RPC_URLS: ${rpcValue.slice(0, 40)}...`);
     }
   }
 
-  // Check optional
-  const optional = ['BUY_ETH', 'MIN_LP_ETH', 'MAX_LP_ETH', 'TP_PCT'];
-  for (const key of optional) {
-    if (process.env[key]) {
-      info(`${key}: ${process.env[key]}`);
-    } else {
-      warn(`${key} chưa set, sẽ dùng default`);
-    }
+  const minLp = toNumber(process.env.MIN_LP_ETH, '0.5');
+  const maxLp = toNumber(process.env.MAX_LP_ETH, '1');
+
+  if (Number.isNaN(minLp) || minLp <= 0) {
+    error('MIN_LP_ETH phải là số > 0');
+    allOk = false;
+  } else {
+    success(`MIN_LP_ETH: ${minLp}`);
+  }
+
+  if (Number.isNaN(maxLp) || maxLp <= 0) {
+    error('MAX_LP_ETH phải là số > 0');
+    allOk = false;
+  } else {
+    success(`MAX_LP_ETH: ${maxLp}`);
+  }
+
+  if (allOk && minLp > maxLp) {
+    error('MIN_LP_ETH không thể lớn hơn MAX_LP_ETH');
+    allOk = false;
+  }
+
+  const taxMax = toNumber(process.env.STRICT_TAX_BPS_MAX, '0');
+  if (Number.isNaN(taxMax) || taxMax < 0) {
+    error('STRICT_TAX_BPS_MAX phải là số >= 0');
+    allOk = false;
+  } else {
+    success(`STRICT_TAX_BPS_MAX: ${taxMax}`);
+  }
+
+  const selectors = process.env.BLOCKLIST_SELECTORS;
+  if (selectors) {
+    info(`BLOCKLIST_SELECTORS: ${selectors}`);
+  } else {
+    warn('BLOCKLIST_SELECTORS chưa thiết lập - đang dùng default trong code');
+  }
+
+  const timeoutMinutes = toNumber(process.env.AUTO_SELL_TIMEOUT_MINUTES, '10');
+  if (Number.isNaN(timeoutMinutes) || timeoutMinutes <= 0) {
+    error('AUTO_SELL_TIMEOUT_MINUTES phải là số > 0');
+    allOk = false;
+  } else {
+    success(`AUTO_SELL_TIMEOUT_MINUTES: ${timeoutMinutes} phút`);
+  }
+
+  const rugThresholdBps = toNumber(process.env.RUG_PULL_THRESHOLD_BPS, '500');
+  if (Number.isNaN(rugThresholdBps) || rugThresholdBps <= 0) {
+    error('RUG_PULL_THRESHOLD_BPS phải là số > 0');
+    allOk = false;
+  } else {
+    success(`RUG_PULL_THRESHOLD_BPS: ${rugThresholdBps} BPS`);
+  }
+
+  const telegramToken = process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN;
+  const telegramChat = process.env.TELEGRAM_CHAT_ID;
+
+  if (telegramToken && telegramChat) {
+    info('Telegram: Token và Chat ID đã thiết lập');
+  } else if (telegramToken || telegramChat) {
+    warn('Telegram config chưa đầy đủ (cần cả token và chat id)');
+  } else {
+    warn('Telegram chưa cấu hình - sẽ không có thông báo (có thể bổ sung sau)');
   }
 
   return allOk;
 }
 
+async function testBananaGun() {
+  title('KIỂM TRA BANANA GUN AUTO-TRADE (TÙY CHỌN)');
+
+  const {
+    BANANA_GUN_TG_API_ID: apiId,
+    BANANA_GUN_TG_API_HASH: apiHash,
+    BANANA_GUN_TG_SESSION: session,
+    BANANA_GUN_BUY_AMOUNT_ETH: amountEth,
+    BANANA_GUN_SLIPPAGE_BPS: slippageBps,
+    BANANA_GUN_PRIORITY_FEE_GWEI: priorityFeeGwei,
+    BANANA_GUN_GAS_MULTIPLIER: gasMultiplier,
+    BANANA_GUN_SELL_PERCENT: sellPercent,
+    BANANA_GUN_TG_BOT: botUsername,
+    BANANA_GUN_TG_BUY_TEMPLATE: buyTemplate,
+    BANANA_GUN_TG_SELL_TEMPLATE: sellTemplate,
+    BANANA_GUN_WALLET_ADDRESS: walletAddress,
+    BANANA_GUN_TG_RESPONSE_TIMEOUT_MS: responseTimeout
+  } = process.env;
+
+  const provided = [apiId, apiHash, session, amountEth].filter(Boolean).length;
+  const optionalValues = [slippageBps, priorityFeeGwei, gasMultiplier, sellPercent, botUsername, buyTemplate, sellTemplate, walletAddress, responseTimeout];
+
+  if (provided === 0 && optionalValues.every(v => !v)) {
+    warn('Bỏ qua Banana Gun (chưa cấu hình)');
+    return null;
+  }
+
+  let ok = true;
+
+  if (!apiId || !apiHash || !session || !amountEth) {
+    warn('Cần đủ BANANA_GUN_TG_API_ID, BANANA_GUN_TG_API_HASH, BANANA_GUN_TG_SESSION, BANANA_GUN_BUY_AMOUNT_ETH để bật auto-buy.');
+    ok = false;
+  }
+
+  if (apiId) {
+    const value = Number(apiId);
+    if (!Number.isInteger(value) || value <= 0) {
+      error('BANANA_GUN_TG_API_ID phải là số nguyên dương');
+      ok = false;
+    } else {
+      success(`BANANA_GUN_TG_API_ID: ${value}`);
+    }
+  }
+
+  if (apiHash) {
+    if (apiHash.length < 16) {
+      warn('BANANA_GUN_TG_API_HASH trông hơi ngắn, vui lòng kiểm tra lại');
+    } else {
+      success(`BANANA_GUN_TG_API_HASH: ${apiHash.slice(0, 4)}***${apiHash.slice(-4)}`);
+    }
+  }
+
+  if (session) {
+    if (session.length < 10) {
+      error('BANANA_GUN_TG_SESSION quá ngắn, có thể chưa copy đúng StringSession');
+      ok = false;
+    } else {
+      success(`BANANA_GUN_TG_SESSION: ${session.slice(0, 6)}***${session.slice(-6)}`);
+    }
+  }
+
+  if (amountEth) {
+    try {
+      const wei = ethers.parseEther(amountEth);
+      if (wei <= 0n) {
+        throw new Error('Amount phải > 0');
+      }
+      success(`BANANA_GUN_BUY_AMOUNT_ETH: ${amountEth} ETH (${wei} wei)`);
+    } catch (e) {
+      error(`BANANA_GUN_BUY_AMOUNT_ETH lỗi: ${e.message}`);
+      ok = false;
+    }
+  }
+
+  if (slippageBps) {
+    const value = toNumber(slippageBps, '0');
+    if (!Number.isFinite(value) || value <= 0) {
+      error('BANANA_GUN_SLIPPAGE_BPS phải là số > 0');
+      ok = false;
+    } else {
+      success(`BANANA_GUN_SLIPPAGE_BPS: ${value}`);
+    }
+  }
+
+  if (priorityFeeGwei) {
+    const value = toNumber(priorityFeeGwei, '0');
+    if (!Number.isFinite(value) || value < 0) {
+      error('BANANA_GUN_PRIORITY_FEE_GWEI phải là số ≥ 0');
+      ok = false;
+    } else {
+      success(`BANANA_GUN_PRIORITY_FEE_GWEI: ${value}`);
+    }
+  }
+
+  if (gasMultiplier) {
+    const value = toNumber(gasMultiplier, '0');
+    if (!Number.isFinite(value) || value <= 0) {
+      error('BANANA_GUN_GAS_MULTIPLIER phải là số > 0');
+      ok = false;
+    } else {
+      success(`BANANA_GUN_GAS_MULTIPLIER: ${value}`);
+    }
+  }
+
+  if (sellPercent) {
+    const value = toNumber(sellPercent, '0');
+    if (!Number.isFinite(value) || value <= 0 || value > 100) {
+      error('BANANA_GUN_SELL_PERCENT phải nằm trong khoảng 1-100');
+      ok = false;
+    } else {
+      success(`BANANA_GUN_SELL_PERCENT: ${value}%`);
+    }
+  }
+
+  if (botUsername) {
+    info(`BANANA_GUN_TG_BOT: ${botUsername}`);
+  }
+
+  if (buyTemplate) {
+    if (!buyTemplate.includes('{token}')) {
+      warn('BANANA_GUN_TG_BUY_TEMPLATE nên chứa {token} để thay thế địa chỉ token');
+    } else {
+      success('BANANA_GUN_TG_BUY_TEMPLATE: OK');
+    }
+  }
+
+  if (sellTemplate) {
+    if (!sellTemplate.includes('{token}')) {
+      warn('BANANA_GUN_TG_SELL_TEMPLATE nên chứa {token}');
+    } else {
+      success('BANANA_GUN_TG_SELL_TEMPLATE: OK');
+    }
+  }
+
+  if (walletAddress) {
+    if (!ethers.isAddress(walletAddress)) {
+      warn('BANANA_GUN_WALLET_ADDRESS không phải địa chỉ hợp lệ (tùy chọn nhưng nên đúng)');
+    } else {
+      success(`BANANA_GUN_WALLET_ADDRESS: ${walletAddress}`);
+    }
+  }
+
+  if (responseTimeout) {
+    const value = toNumber(responseTimeout, '0');
+    if (!Number.isFinite(value) || value <= 0) {
+      warn('BANANA_GUN_TG_RESPONSE_TIMEOUT_MS phải là số > 0 (sẽ dùng mặc định 20000)');
+    } else {
+      info(`BANANA_GUN_TG_RESPONSE_TIMEOUT_MS: ${value} ms`);
+    }
+  }
+
+  return ok;
+}
+
 async function testRpcConnection() {
   title('KIỂM TRA KẾT NỐI RPC');
-  
+
   const urls = process.env.RPC_URLS?.split(',').map(s => s.trim()).filter(Boolean) || [];
-  
+
   if (urls.length === 0) {
     error('Không có RPC URL nào');
     return false;
@@ -100,9 +297,9 @@ async function testRpcConnection() {
     const isHTTP = url.startsWith('https://') || url.startsWith('http://');
 
     try {
-      info(`Đang test RPC #${i + 1}: ${url.slice(0, 50)}...`);
-      
-      const provider = isWSS 
+      info(`Đang test RPC #${i + 1}: ${url.slice(0, 70)}...`);
+
+      const provider = isWSS
         ? new ethers.WebSocketProvider(url)
         : new ethers.JsonRpcProvider(url);
 
@@ -112,22 +309,20 @@ async function testRpcConnection() {
       ]);
 
       const network = await provider.getNetwork();
-      
+
       if (network.chainId !== 1n) {
-        error(`❌ RPC #${i + 1}: Không phải Ethereum Mainnet (chainId: ${network.chainId})`);
+        error(`RPC #${i + 1}: Không phải Ethereum Mainnet (chainId: ${network.chainId})`);
         return false;
       }
 
       success(`RPC #${i + 1}: OK - Block ${blockNumber} (${isWSS ? 'WebSocket' : 'HTTP'})`);
-      
+
       if (isWSS) hasWSS = true;
       if (isHTTP) httpCount++;
 
-      // Cleanup WSS
       if (isWSS && provider.destroy) {
         provider.destroy();
       }
-
     } catch (e) {
       error(`RPC #${i + 1}: FAIL - ${e.message}`);
       return false;
@@ -135,130 +330,60 @@ async function testRpcConnection() {
   }
 
   if (!hasWSS) {
-    error('KHÔNG CÓ WEBSOCKET RPC - Bot sẽ không thể snipe mempool!');
-    return false;
+    warn('Không có WebSocket RPC - scanner sẽ chậm hơn và bỏ lỡ mempool realtime');
   }
 
   if (httpCount === 0) {
-    warn('Không có HTTP RPC fallback - Nên có ít nhất 1 HTTP RPC');
+    warn('Không có HTTP RPC fallback - nên có ít nhất 1 HTTP RPC');
   }
 
   success(`Tổng: ${urls.length} RPC (${hasWSS ? '✓' : '✗'} WebSocket, ${httpCount} HTTP)`);
   return true;
 }
 
-async function testWallet() {
-  title('KIỂM TRA WALLET');
+async function testTelegram() {
+  title('KIỂM TRA TELEGRAM BOT (TÙY CHỌN)');
 
-  try {
-    const privateKey = process.env.PRIVATE_KEY;
-    const expectedAddress = process.env.WALLET_ADDRESS;
+  const token = process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
 
-    if (!privateKey || !expectedAddress) {
-      error('Private key hoặc wallet address thiếu');
-      return false;
-    }
+  if (!token && !chatId) {
+    warn('Bỏ qua kiểm tra Telegram (chưa cấu hình)');
+    return null;
+  }
 
-    // Check private key format
-    if (privateKey.length !== 66) {
-      error(`Private key length sai: ${privateKey.length} (phải là 66)`);
-      return false;
-    }
-
-    // Create wallet from private key
-    const wallet = new ethers.Wallet(privateKey);
-    
-    if (wallet.address.toLowerCase() !== expectedAddress.toLowerCase()) {
-      error(`Address không khớp!`);
-      error(`  From private key: ${wallet.address}`);
-      error(`  In .env: ${expectedAddress}`);
-      return false;
-    }
-
-    success(`Address khớp: ${wallet.address}`);
-
-    // Check balance
-    const urls = process.env.RPC_URLS?.split(',').map(s => s.trim()).filter(Boolean) || [];
-    const httpRpc = urls.find(u => u.startsWith('http'));
-    
-    if (!httpRpc) {
-      warn('Không có HTTP RPC để check balance');
-      return true;
-    }
-
-    const provider = new ethers.JsonRpcProvider(httpRpc);
-    const balance = await provider.getBalance(wallet.address);
-    const balanceETH = ethers.formatEther(balance);
-
-    if (balance === 0n) {
-      error(`Balance: 0 ETH - Cần nạp ETH để trade!`);
-      return false;
-    } else if (balance < ethers.parseEther('0.05')) {
-      warn(`Balance: ${balanceETH} ETH - Nên có ít nhất 0.05 ETH`);
-    } else {
-      success(`Balance: ${balanceETH} ETH ✓`);
-    }
-
-    // Check nonce
-    const nonce = await provider.getTransactionCount(wallet.address);
-    info(`Nonce: ${nonce} ${nonce === 0 ? '(wallet mới)' : ''}`);
-
-    return true;
-
-  } catch (e) {
-    error(`Lỗi khi test wallet: ${e.message}`);
+  if (!token || !chatId) {
+    error('Cần cả TELEGRAM_BOT_TOKEN và TELEGRAM_CHAT_ID để kiểm tra Telegram');
     return false;
   }
-}
-
-async function testTelegram() {
-  title('KIỂM TRA TELEGRAM BOT');
 
   try {
-    const token = process.env.TELEGRAM_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
-
-    if (!token || !chatId) {
-      error('Telegram token hoặc chat ID thiếu');
-      return false;
-    }
-
-    info(`Token: ${token.slice(0, 20)}...`);
+    info(`Token: ${token.slice(0, 25)}...`);
     info(`Chat ID: ${chatId}`);
 
     const bot = new TelegramBot(token, { polling: false });
+    const testMsg = `🧪 TEST MESSAGE\n━━━━━━━━━━━━━━━━\n⏰ ${new Date().toLocaleString('vi-VN')}\n✅ Scanner setup đang được kiểm tra`; 
 
-    // Test send message
-    info('Đang gửi test message...');
-    
-    const testMsg = `🧪 TEST MESSAGE
-━━━━━━━━━━━━━━━━
-⏰ ${new Date().toLocaleString('vi-VN')}
-✅ Bot setup đang được kiểm tra
-📝 Nếu nhận được tin này = Telegram OK!`;
-
-    await bot.sendMessage(chatId, testMsg, { 
-      disable_web_page_preview: true 
+    await bot.sendMessage(chatId, testMsg, {
+      disable_web_page_preview: true
     });
 
-    success('Test message đã gửi - Kiểm tra Telegram của bạn!');
-    
-    // Test bot info
+    success('Test message đã gửi - kiểm tra Telegram của bạn!');
+
     const me = await bot.getMe();
     info(`Bot username: @${me.username}`);
     info(`Bot name: ${me.first_name}`);
 
     return true;
-
   } catch (e) {
     error(`Lỗi Telegram: ${e.message}`);
-    
+
     if (e.message.includes('401')) {
-      error('Token không hợp lệ - Lấy token mới từ @BotFather');
+      error('Token không hợp lệ - lấy token mới từ @BotFather');
     } else if (e.message.includes('400')) {
       error('Chat ID không hợp lệ hoặc chưa /start bot');
     }
-    
+
     return false;
   }
 }
@@ -275,9 +400,9 @@ async function testContracts() {
   try {
     const urls = process.env.RPC_URLS?.split(',').map(s => s.trim()).filter(Boolean) || [];
     const httpRpc = urls.find(u => u.startsWith('http'));
-    
+
     if (!httpRpc) {
-      warn('Không có HTTP RPC để test contracts');
+      warn('Không có HTTP RPC để test contracts - bỏ qua bước này');
       return true;
     }
 
@@ -285,9 +410,9 @@ async function testContracts() {
 
     for (const [name, address] of Object.entries(contracts)) {
       info(`Checking ${name}: ${address}`);
-      
+
       const code = await provider.getCode(address);
-      
+
       if (code === '0x' || code === '0x0') {
         error(`${name} không phải là contract!`);
         return false;
@@ -297,71 +422,10 @@ async function testContracts() {
     }
 
     return true;
-
   } catch (e) {
     error(`Lỗi khi test contracts: ${e.message}`);
     return false;
   }
-}
-
-async function testTradingSettings() {
-  title('KIỂM TRA TRADING SETTINGS');
-
-  const settings = {
-    BUY_ETH: process.env.BUY_ETH || '0.01',
-    MIN_LP_ETH: process.env.MIN_LP_ETH || '0.5',
-    MAX_LP_ETH: process.env.MAX_LP_ETH || '1.0',
-    STRICT_TAX_BPS_MAX: process.env.STRICT_TAX_BPS_MAX || '0',
-    TP_PCT: process.env.TP_PCT || '20',
-    TP_TIMEOUT_SEC: process.env.TP_TIMEOUT_SEC || '600',
-    PRICE_MULTIPLE_ABORT: process.env.PRICE_MULTIPLE_ABORT || '3',
-    RUG_DEFENSE: process.env.RUG_DEFENSE || '1',
-    RUG_THRESHOLD_BP: process.env.RUG_THRESHOLD_BP || '2000'
-  };
-
-  let allOk = true;
-
-  for (const [key, value] of Object.entries(settings)) {
-    const numValue = Number(value);
-    
-    if (isNaN(numValue)) {
-      error(`${key} = ${value} không phải là số`);
-      allOk = false;
-      continue;
-    }
-
-    let status = '✓';
-    let color = COLORS.green;
-
-    // Warnings cho settings không tối ưu
-    if (key === 'BUY_ETH' && numValue > 0.1) {
-      status = '⚠️  Cao - Nên start với <0.05 ETH';
-      color = COLORS.yellow;
-    } else if (key === 'MIN_LP_ETH' && numValue < 0.3) {
-      status = '⚠️  Thấp - Dễ match scam';
-      color = COLORS.yellow;
-    } else if (key === 'STRICT_TAX_BPS_MAX' && numValue > 0) {
-      status = '⚠️  Cho phép tax - Rủi ro cao';
-      color = COLORS.yellow;
-    } else if (key === 'TP_PCT' && numValue < 10) {
-      status = '⚠️  TP thấp - Nhiều gas phí';
-      color = COLORS.yellow;
-    } else if (key === 'TP_TIMEOUT_SEC' && numValue > 1800) {
-      status = '⚠️  Timeout dài - Hold lâu';
-      color = COLORS.yellow;
-    }
-
-    console.log(`${color}  ${key}: ${value} ${status}${COLORS.reset}`);
-  }
-
-  // Calculate expected costs
-  const buyETH = Number(settings.BUY_ETH);
-  const estimatedGas = 0.002; // ~0.002 ETH per trade
-  const tradesPerBalance = Math.floor(buyETH / (buyETH + estimatedGas));
-  
-  info(`\nDự kiến: Mỗi trade tốn ~${buyETH + estimatedGas} ETH (buy + gas)`);
-  
-  return allOk;
 }
 
 async function main() {
@@ -369,148 +433,99 @@ async function main() {
 ${COLORS.magenta}
 ╔════════════════════════════════════════════════════╗
 ║                                                    ║
-║        🧪 ETH SNIPER BOT - SETUP TEST             ║
+║    🧪 ETH MEMPOOL SCANNER - SIGNAL SETUP CHECK     ║
 ║                                                    ║
-║  Kiểm tra toàn bộ cấu hình trước khi chạy         ║
+║  Đảm bảo cấu hình chuẩn trước khi chạy scanner    ║
 ║                                                    ║
 ╚════════════════════════════════════════════════════╝
-${COLORS.reset}
-`);
+${COLORS.reset}`);
 
   const results = {
     env: false,
     rpc: false,
-    wallet: false,
-    telegram: false,
+    telegram: null,
     contracts: false,
-    settings: false
+    bananaGun: null
   };
 
   try {
-    // Test 1: Environment variables
     results.env = await testEnvVariables();
     if (!results.env) {
-      error('\n⛔ .env file có vấn đề - Sửa trước khi tiếp tục!\n');
+      error('\n⛔ .env file có vấn đề - sửa trước khi tiếp tục!\n');
       process.exit(1);
     }
 
-    // Test 2: RPC connections
     results.rpc = await testRpcConnection();
     if (!results.rpc) {
-      error('\n⛔ RPC connection failed - Kiểm tra lại RPC URLs!\n');
+      error('\n⛔ RPC connection failed - kiểm tra lại RPC URLs!\n');
       process.exit(1);
     }
 
-    // Test 3: Wallet
-    results.wallet = await testWallet();
-    if (!results.wallet) {
-      error('\n⛔ Wallet có vấn đề - Kiểm tra private key và balance!\n');
-      process.exit(1);
-    }
-
-    // Test 4: Telegram
     results.telegram = await testTelegram();
-    if (!results.telegram) {
-      warn('\n⚠️  Telegram có vấn đề - Bot vẫn chạy được nhưng không có notification!\n');
+    if (results.telegram === false) {
+      warn('\n⚠️  Telegram chưa sẵn sàng - scanner vẫn chạy được nhưng không có thông báo!\n');
     }
 
-    // Test 5: Contracts
+    results.bananaGun = await testBananaGun();
+    if (results.bananaGun === false) {
+      warn('\n⚠️  Banana Gun cấu hình chưa hợp lệ - auto-buy sẽ không hoạt động!\n');
+    }
+
     results.contracts = await testContracts();
     if (!results.contracts) {
-      error('\n⛔ Contract addresses sai - Sửa WETH/ROUTER/FACTORY!\n');
+      error('\n⛔ Contract addresses sai - kiểm tra lại WETH/ROUTER/FACTORY!\n');
       process.exit(1);
     }
 
-    // Test 6: Trading settings
-    results.settings = await testTradingSettings();
-
-    // Final summary
     title('KẾT QUẢ TỔNG HỢP');
 
     const checks = [
       { name: 'Environment Variables', result: results.env, critical: true },
       { name: 'RPC Connection', result: results.rpc, critical: true },
-      { name: 'Wallet Setup', result: results.wallet, critical: true },
-      { name: 'Telegram Bot', result: results.telegram, critical: false },
       { name: 'Contract Addresses', result: results.contracts, critical: true },
-      { name: 'Trading Settings', result: results.settings, critical: false }
+      { name: 'Telegram Bot', result: results.telegram, critical: false },
+      { name: 'Banana Gun Auto-Buy', result: results.bananaGun, critical: false }
     ];
 
     let criticalFailed = false;
     let warningCount = 0;
 
-    console.log('');
     for (const check of checks) {
-      if (check.result) {
+      if (check.result === true) {
         success(`${check.name}: PASS`);
-      } else if (check.critical) {
-        error(`${check.name}: FAIL (CRITICAL)`);
-        criticalFailed = true;
-      } else {
-        warn(`${check.name}: WARNING`);
+      } else if (check.result === null) {
+        warn(`${check.name}: SKIPPED`);
         warningCount++;
+      } else if (check.result === false) {
+        if (check.critical) {
+          error(`${check.name}: FAIL (CRITICAL)`);
+          criticalFailed = true;
+        } else {
+          warn(`${check.name}: WARNING`);
+          warningCount++;
+        }
       }
     }
 
-    console.log('');
-    console.log(`${'═'.repeat(50)}\n`);
+    console.log(`\n${'═'.repeat(50)}\n`);
 
     if (criticalFailed) {
-      error('❌ SETUP CHƯA HOÀN THÀNH - Sửa các lỗi critical trước!');
-      console.log('\n💡 Hướng dẫn:');
-      console.log('   1. Đọc kỹ error messages phía trên');
-      console.log('   2. Sửa file .env theo hướng dẫn');
-      console.log('   3. Chạy lại: node test_setup.js\n');
+      error('❌ SETUP CHƯA HOÀN THÀNH - sửa lỗi critical trước!');
       process.exit(1);
-    } else if (warningCount > 0) {
-      warn(`⚠️  SETUP OK NHƯNG CÓ ${warningCount} WARNING`);
-      console.log('\n💡 Khuyến nghị:');
-      console.log('   - Sửa các warnings để bot hoạt động tốt nhất');
-      console.log('   - Hoặc tiếp tục nếu bạn hiểu rủi ro\n');
-      
-      // Ask user to confirm
-      console.log('🚀 Bạn có muốn tiếp tục chạy bot không?');
-      console.log('   - Nếu YES: npm run auto:mempool');
-      console.log('   - Nếu NO: Sửa warnings và test lại\n');
-    } else {
-      success('🎉 SETUP HOÀN THÀNH - SẴN SÀNG CHẠY BOT!');
-      console.log('\n🚀 Để chạy bot:');
-      console.log(`   ${COLORS.green}npm run auto:mempool${COLORS.reset}`);
-      console.log('\n📊 Để theo dõi:');
-      console.log('   - Xem logs trong console');
-      console.log('   - Nhận notifications qua Telegram');
-      console.log('   - Kiểm tra transactions trên Etherscan\n');
-      console.log('💡 Tips:');
-      console.log('   - Start với amount nhỏ (0.01 ETH)');
-      console.log('   - Theo dõi chặt 30 phút đầu');
-      console.log('   - Điều chỉnh settings dựa trên kết quả\n');
-      console.log('⚠️  Remember:');
-      console.log('   - Crypto trading có rủi ro');
-      console.log('   - Chỉ trade với tiền dư');
-      console.log('   - Luôn backup private key an toàn\n');
     }
 
-    // Summary table
-    console.log('📋 Quick Settings Summary:');
-    console.log('┌─────────────────────────┬──────────────────────┐');
-    console.log(`│ Buy Amount              │ ${(process.env.BUY_ETH || '0.01').padEnd(20)} │`);
-    console.log(`│ LP Range                │ ${(process.env.MIN_LP_ETH || '0.5')}-${(process.env.MAX_LP_ETH || '1.0')} ETH`.padEnd(20) + '        │');
-    console.log(`│ Max Tax                 │ ${(process.env.STRICT_TAX_BPS_MAX || '0')} BPS`.padEnd(20) + '             │');
-    console.log(`│ Take Profit             │ ${(process.env.TP_PCT || '20')}%`.padEnd(20) + '                │');
-    console.log(`│ Timeout                 │ ${(process.env.TP_TIMEOUT_SEC || '600')}s`.padEnd(20) + '               │');
-    console.log(`│ Price Guard             │ ${(process.env.PRICE_MULTIPLE_ABORT || '3')}x`.padEnd(20) + '                │');
-    console.log(`│ Rug Defense             │ ${(process.env.RUG_DEFENSE || '1') === '1' ? 'ON' : 'OFF'}`.padEnd(20) + '                │');
-    console.log('└─────────────────────────┴──────────────────────┘\n');
+    if (warningCount > 0) {
+      warn(`⚠️  SETUP OK nhưng có ${warningCount} cảnh báo cần lưu ý.`);
+    } else {
+      success('🎉 SETUP HOÀN THÀNH - SẴN SÀNG CHẠY SCANNER!');
+    }
+
+    console.log('\n👉 Bước tiếp theo: npm run auto:mempool');
 
   } catch (e) {
-    error(`\n💥 Lỗi không mong muốn: ${e.message}`);
-    console.error(e);
+    console.error('\n💥 Fatal error trong setup checker:', e);
     process.exit(1);
   }
 }
 
-// Run tests
-main().catch(err => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+main();

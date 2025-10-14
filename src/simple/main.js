@@ -7,9 +7,17 @@ import { makePanicSell } from './panicSell.js';
 import { watchRug } from './mempoolWatcher.js';
 import { createTg } from '../telegram.js';
 
-function getArgs(){
-  const args = Object.fromEntries(process.argv.slice(2).map((v,i,arr)=> v.startsWith('--')? [v.slice(2), arr[i+1]]:[]).filter(Boolean));
-  return args;
+function getArgs() {
+  const pairs = [];
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i += 1) {
+    const key = argv[i];
+    if (!key.startsWith('--')) continue;
+    const value = argv[i + 1];
+    pairs.push([key.slice(2), value]);
+    i += 1;
+  }
+  return Object.fromEntries(pairs);
 }
 
 async function main(){
