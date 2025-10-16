@@ -139,7 +139,7 @@ export class BananaGunClient {
     };
   }
 
-  async submitBuy({ token, pair, blockNumber, lpEth, basePriceTokensPerEth, taxBps, priceGuardInfo, dex }) {
+  async submitBuy({ token, pair, blockNumber, lpEth, basePriceTokensPerEth, taxBps, priceGuardInfo }) {
     if (!this.enabled) {
       return { success: false, skipped: true, error: 'Banana Gun client disabled' };
     }
@@ -159,9 +159,7 @@ export class BananaGunClient {
       taxBps,
       priceGuardStatus,
       priceGuardReason,
-      basePriceTokensPerEth: basePrice,
-      chain: dex?.chain,
-      dex: dex?.name
+      basePriceTokensPerEth: basePrice
     }));
 
     const sent = await this.client.sendMessage(this.botEntity, { message: command });
@@ -185,7 +183,7 @@ export class BananaGunClient {
     };
   }
 
-  async submitSell({ token, percent, reason, pair, metadata, dex }) {
+  async submitSell({ token, percent, reason, pair, metadata }) {
     if (!this.enabled) {
       return { success: false, skipped: true, error: 'Banana Gun client disabled' };
     }
@@ -199,9 +197,7 @@ export class BananaGunClient {
       reason,
       pair,
       triggerBlock: metadata?.triggerBlock,
-      triggerReason: metadata?.triggerReason,
-      chain: dex?.chain,
-      dex: dex?.name
+      triggerReason: metadata?.triggerReason
     });
     const command = renderTemplate(this.sellTemplate, context);
 

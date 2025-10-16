@@ -110,7 +110,7 @@ async function testEnvVariables() {
     success(`RUG_PULL_THRESHOLD_BPS: ${rugThresholdBps} BPS`);
   }
 
-  const telegramToken = process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN;
+  const telegramToken = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
   const telegramChat = process.env.TELEGRAM_CHAT_ID;
 
   if (telegramToken && telegramChat) {
@@ -344,7 +344,7 @@ async function testRpcConnection() {
 async function testTelegram() {
   title('KIỂM TRA TELEGRAM BOT (TÙY CHỌN)');
 
-  const token = process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN;
+  const token = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
   if (!token && !chatId) {
@@ -353,7 +353,7 @@ async function testTelegram() {
   }
 
   if (!token || !chatId) {
-    error('Cần cả TELEGRAM_BOT_TOKEN và TELEGRAM_CHAT_ID để kiểm tra Telegram');
+    error('Cần cả TELEGRAM_TOKEN và TELEGRAM_CHAT_ID để kiểm tra Telegram');
     return false;
   }
 
