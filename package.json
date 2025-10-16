@@ -7,7 +7,7 @@
     "start": "node src/index.js",
     "watch": "node --watch src/index.js",
     "simple": "node -r dotenv/config src/simple/main.js",
-    "auto": "node -r dotenv/config src/simple/auto.js",
+    "auto": "node -r dotenv/config src/simple/auto_mempool.js",
     "auto:mempool": "node -r dotenv/config src/simple/auto_mempool.js"
   },
   "dependencies": {

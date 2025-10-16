@@ -908,6 +908,36 @@ function toFloat(value) {
           await handleSell({ trade, key, reason: 'Take-profit trailing', notifyTimeout: false });
           return;
         }
+      } catch (error) {
+        console.warn('[SmartStop] update failed:', error.message);
+      }
+    }, 15000);
+
+    trade.timers = trade.timers || [];
+    trade.timers.push(interval);
+  }
+
+  function armRugWatcher(trade, key) {
+    if (!hasWSS) return;
+
+    const watcher = watchRugDefense({
+      provider,
+      pair: trade.pair,
+      routers: trade.dex?.routers || c.dexes[0]?.routers || [],
+      thresholdBp: c.rugThresholdBps,
+      onThreat: async ({ kind, hash }) => {
+        await notifier.notifyRugAlert({
+          token: trade.token,
+          pair: trade.pair,
+          kind,
+          rugTxHash: hash,
+          blockNumber: await provider.getBlockNumber(),
+          metadata: trade.metadata
+        });
+
+        await handleSell({ trade, key, reason: `Rug pull (${kind})`, notifyTimeout: false });
+      }
+    });
 
         const selRes = await rejectBySelectors({
           provider,
